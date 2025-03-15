@@ -92,11 +92,8 @@ namespace MirrorMode
 
             if (e.Button is SButton.F6)
             {
-                Game1.getCharacterFromName("Haley").Speed += 2;
-                foreach (var map in MapsToRetry)
-                {
-                    Log.Warn(map);
-                }
+                if (!Game1.player.currentLocation.IsOutdoors) Game1.getCharacterFromName("Haley").checkSchedule(Game1.timeOfDay);
+                Game1.getCharacterFromName("Haley").Speed = 10;
             }
         }
 

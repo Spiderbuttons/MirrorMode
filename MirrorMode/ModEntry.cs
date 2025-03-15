@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Xml;
 using Force.DeepCloner;
@@ -12,8 +13,13 @@ using StardewModdingAPI.Events;
 using StardewModdingAPI.Utilities;
 using StardewValley;
 using MirrorMode.Helpers;
+using MirrorMode.Patches;
+using StardewModdingAPI.Enums;
 using StardewModdingAPI.Framework.Rendering;
+using StardewValley.Buildings;
 using StardewValley.Extensions;
+using StardewValley.GameData.Characters;
+using StardewValley.Locations;
 using TMXTile;
 using xTile;
 using xTile.Dimensions;
@@ -25,13 +31,29 @@ using xTile.Tiles;
 
 namespace MirrorMode
 {
+    /* TODO: FUNCTIONS WITH HARDCODED COORDINATES
+
+        Farm.doDailyMountainFarmUpdate()
+
+        FarmHouse.getFireplacePoint()
+        FarmHouse.GetCribBounds()
+        FarmHouse.getEntryLocation()
+        FarmHouse.getForbiddenPetWarpTiles
+
+    */
+
     internal sealed class ModEntry : Mod
     {
         internal static IModHelper ModHelper { get; set; } = null!;
         internal static IMonitor ModMonitor { get; set; } = null!;
         internal static Harmony Harmony { get; set; } = null!;
 
-        internal static HashSet<string> MapWarpCache = new();
+        internal static HashSet<string> WarpEdits { get; } = new();
+
+        internal static Dictionary<string, string> LocationToMapLookup { get; } = new();
+        internal static Dictionary<string, int> MapToWidthLookup { get; } = new();
+        internal static HashSet<string> MapsToRetry = new();
+        internal static bool CharactersReady = true;
 
         public override void Entry(IModHelper helper)
         {
@@ -42,341 +64,178 @@ namespace MirrorMode
             Harmony.PatchAll();
 
             Helper.Events.Input.ButtonPressed += this.OnButtonPressed;
-            Helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
-            Helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
             Helper.Events.Player.Warped += this.OnWarped;
+            Helper.Events.Content.AssetRequested += this.OnAssetRequested;
+            Helper.Events.Content.AssetsInvalidated += this.OnAssetsInvalidated;
+            Helper.Events.Content.AssetReady += this.OnAssetReady;
+            Helper.Events.Specialized.LoadStageChanged += this.OnLoadStageChanged;
+            Helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
+            {
+                Helper.GameContent.InvalidateCache(asset => true);
+            };
         }
 
         private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
         {
             if (e.Button is SButton.F2)
             {
-                MapWarpCache.Clear();
+                foreach (var prop in Game1.currentLocation.Map.Properties)
+                {
+                    Log.Warn(prop.Key + ": " + prop.Value);
+                }
+            }
+
+            if (e.Button is SButton.F5)
+            {
+                Helper.GameContent.InvalidateCache("Data/Locations");
+            }
+
+            if (e.Button is SButton.F6)
+            {
+                Game1.getCharacterFromName("Haley").Speed += 2;
+                foreach (var map in MapsToRetry)
+                {
+                    Log.Warn(map);
+                }
+            }
+        }
+
+        private void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
+        {
+            if (typeof(Map).IsAssignableFrom(e.DataType))
+            {
+                MapsToRetry.Remove(PathUtilities.NormalizeAssetName(e.NameWithoutLocale.BaseName));
+                e.Edit((asset) =>
+                {
+                    var map = asset.AsMap().Data;
+                    foreach (var layer in map.m_layers)
+                    {
+                        layer.MirrorHorizontal(asset.NameWithoutLocale);
+                    }
+                    map.MirrorProperties(asset.NameWithoutLocale);
+                    MapToWidthLookup.TryAdd(PathUtilities.NormalizeAssetName(asset.NameWithoutLocale.BaseName), map.TileWidth());
+                }, AssetEditPriority.Late + 696969);
+            }
+
+            if (e.NameWithoutLocale.IsEquivalentTo("Data/Characters"))
+            {
+                e.Edit(asset =>
+                {
+                    var charData = asset.AsDictionary<string, CharacterData>().Data;
+                    foreach (var chara in charData.Values)
+                    {
+                        if (chara.Home is not null)
+                        {
+                            foreach (var home in chara.Home)
+                            {
+                                if (LocationToMapLookup.TryGetValue(home.Location, out var loca) &&
+                                    MapToWidthLookup.TryGetValue(loca, out var width))
+                                {
+                                    Monitor.LogOnce("Mirroring home tile for " + chara.DisplayName + " in " + loca, LogLevel.Alert);
+                                    home.Tile = home.Tile.Mirror(width);
+                                }
+                                else CharactersReady = false;
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        private void OnAssetsInvalidated(object? sender, AssetsInvalidatedEventArgs e)
+        {
+            if (e.NamesWithoutLocale.Any(asset => asset.IsEquivalentTo("Data/Locations")))
+            {
+                LocationToMapLookup.Clear();
+            }
+
+            foreach (var mapAsset in e.NamesWithoutLocale.Where(asset => MapToWidthLookup.ContainsKey(asset.BaseName)))
+            {
+                MapToWidthLookup.Remove(mapAsset.BaseName);
+                MapsToRetry.Remove(mapAsset.BaseName);
+            }
+        }
+
+        private void OnLoadStageChanged(object? sender, LoadStageChangedEventArgs e)
+        {
+            if (e.NewStage is LoadStage.Loaded or LoadStage.Ready)
+            {
+                if (MapsToRetry.Any())
+                {
+                    Log.Alert("Retrying " + MapsToRetry.Count + " maps");
+                    foreach (var map in MapsToRetry)
+                    {
+                        MapToWidthLookup.Remove(map);
+                    }
+                    Helper.GameContent.InvalidateCache(asset => MapsToRetry.Contains(PathUtilities.NormalizeAssetName(asset.NameWithoutLocale.BaseName)));
+                }
+            }
+        }
+
+        private void OnAssetReady(object? sender, AssetReadyEventArgs e)
+        {
+            if (e.NameWithoutLocale.IsEquivalentTo("Data/Locations"))
+            {
+                var locationData = DataLoader.Locations(Game1.content);
+                foreach (var location in locationData)
+                {
+                    if (location.Value.CreateOnLoad is not null) LocationToMapLookup.TryAdd(location.Key, PathUtilities.NormalizeAssetName(location.Value.CreateOnLoad.MapPath));
+                }
+
+                if (!CharactersReady) Helper.GameContent.InvalidateCache("Data/Characters");
+                Helper.GameContent.InvalidateCache(asset =>
+                {
+                    if (MapsToRetry.Contains(PathUtilities.NormalizeAssetName(asset.NameWithoutLocale.BaseName)))
+                    {
+                        Log.Error("Retrying " + asset.NameWithoutLocale.BaseName);
+                        return true;
+                    }
+                
+                    return false;
+                });
+            }
+
+            if (e.NameWithoutLocale.IsEquivalentTo("Data/Characters"))
+            {
+                Utility.ForEachVillager(chara =>
+                {
+                    chara.reloadDefaultLocation();
+                    return true;
+                });
+            }
+
+            if (e.NameWithoutLocale.BaseName.Contains("Maps/"))
+            {
+                if (!CharactersReady) Helper.GameContent.InvalidateCache("Data/Characters");
             }
         }
 
         private void OnWarped(object? sender, WarpedEventArgs e)
         {
-            if (!e.IsLocalPlayer) return;
-            e.Player.Position = new Vector2((e.NewLocation.Map.DisplayWidth - e.Player.Position.X) - 64,
-                e.Player.Position.Y);
-        }
-
-        private void OnGameLaunched(object? sender, GameLaunchedEventArgs e)
-        {
-            // var renderTargets = Game1.graphics.GraphicsDevice.GetRenderTargets();
-            // foreach (var target in renderTargets) {
-            //     var tex = target.RenderTarget as Texture2D;
-            //     if (tex == null) continue;
-            //     // if (ModEntry.TexDataCache.ContainsKey(tex.Name)) return;
-            //     // horizontally mirror the pixels
-            //     var data = new Color[tex.Width * tex.Height];
-            //     tex.GetData(data);
-            //     var newData = new Color[data.Length];
-            //     for (int y = 0; y < tex.Height; y++)
-            //     {
-            //         for (int x = 0; x < tex.Width; x++)
-            //         {
-            //             newData[y * tex.Width + x] = data[y * tex.Width + (tex.Width - x - 1)];
-            //         }
-            //     }
-            //     tex.SetData(newData);
-            //     ModEntry.TexDataCache.TryAdd(tex.Name, tex.GetHashCode());
-            // }
-        }
-
-        private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
-        {
-            // // Log.Debug("ggg");
-            // var renderTargets = Game1.graphics.GraphicsDevice.GetRenderTargets();
-            // foreach (var target in renderTargets) {
-            //     Log.Warn("hhhh");
-            //     var tex = target.RenderTarget as Texture2D;
-            //     // Log.Debug("Waaaaaa");
-            //     if (tex == null) continue;
-            //     // Log.Debug("waaa");
-            //     // if (ModEntry.TexDataCache.ContainsKey(tex.Name)) return;
-            //     // horizontally mirror the pixels
-            //     var data = new Color[tex.Width * tex.Height];
-            //     tex.GetData(data);
-            //     var newData = new Color[data.Length];
-            //     for (int y = 0; y < tex.Height; y++)
-            //     {
-            //         for (int x = 0; x < tex.Width; x++)
-            //         {
-            //             newData[y * tex.Width + x] = data[y * tex.Width + (tex.Width - x - 1)];
-            //         }
-            //     }
-            //     tex.SetData(newData);
-            //     ModEntry.TexDataCache.TryAdd(tex.Name, tex.GetHashCode());
-            // }
+            // Helper.GameContent.InvalidateCache("Data/Locations");
+            // if (!e.IsLocalPlayer || e.OldLocation is FarmHouse || e.NewLocation is FarmHouse ||
+            //     e.OldLocation.Name is "Greenhouse" || e.NewLocation.Name is "Greenhouse") return;
+            // e.Player.setTileLocation(e.Player.Tile.Mirror(e.NewLocation.Map.TileWidth()));
+            Log.Alert(e.Player.Tile);
+            return;
         }
     }
 
-    [HarmonyPatch]
-    public static class TiledPatches
+    static class MirroringExtensions
     {
-        /* TODO: Map Properties
-         GROUP 1:
-            ValidBuildRect <x> <y> <w> <h>
-            SpawnMountainFarmOreRect <x> <y> <w> <h>
-            ProduceArea <x> <y> <w> <h>
-            ViewportClamp <x> <y> <w> <h>
-
-        GROUP 2:
-            BrookSounds [<x> <y> <type>]
-            Light [<x> <y> <type>]+
-            WindowLight [<x> <y> <type>]+
-            Stumps [<x> <y> <unused>]+
-            Trees [<x> <y> <type>]+
-
-        GROUP 3:
-            BackwoodsEntry [<x> <y>]
-            BusStopEntry [<x> <y>]
-            DefaultWarpLocation <x> <y>
-            EntryLocation <x> <y>
-            FarmCaveEntry [<x> <y>]
-            FarmHouseEntry [<x> <y>]
-            ForestEntry [<x> <y>]
-            GrandpaShrineLocation [<x> <y>]
-            GreenhouseLocation [<x> <y>]
-            KitchenStandingLocation [<x> <y>]
-            MailboxLocation [<x> <y>]
-            PetBowlLocation <x> <y>
-            ShippingBinLocation [<x> <y>]
-            SpouseAreaLocation [<x> <y>]
-            SpouseRoomPosition <x> <y>
-            TravelingCartPosition <x> <y>
-            WarpTotemEntry [<x> <y>]
-            FarmHouseStarterSeedsPosition <x> <y>
-
-        GROUP 4:
-            NPCWarp [<fromX> <fromY> <toArea> <toX> <toY>]+ ! IMPORTANT ! Can reuse "Warp"
-
-        GROUP 5:
-            DayTiles [<layer> <x> <y> <tilesheetIndex>]+
-            NightTiles [<layer> <x> <y> <tilesheetIndex>]+
-            FarmHouseFurniture [<id> <x> <y> <rotations>]+
-
-        GROUP 6:
-            Doors [<x> <y> <sheetId> <tileId>]+
-        */
-
-        public static Layer MirrorHorizontal(this Layer layer)
+        public static int TileWidth(this Map map)
         {
-            TileArray tiles = layer.Tiles;
-            for (int y = 0; y < layer.LayerHeight; y++)
-            {
-                for (int x = 0; x < layer.LayerWidth / 2; x++)
-                {
-                    Location loc1 = new Location(x, y);
-                    Location loc2 = new Location(layer.LayerWidth - x - 1, y);
-                    (tiles[loc1], tiles[loc2]) = (tiles[loc2], tiles[loc1]);
-                }
-            }
-
-            return layer;
+            return map.DisplayWidth / Game1.tileSize;
         }
 
-        public static void MirrorProperties(this Map map)
+        public static Vector2 Mirror(this Vector2 vector, int mapWidth)
         {
-            foreach (var prop in map.Properties)
-            {
-                try
-                {
-                    switch (prop.Key)
-                    {
-                        case "ValidBuildRect":
-                        case "SpawnMountainFarmOreRect":
-                        case "ProduceArea":
-                        case "ViewportClamp":
-                            if (string.IsNullOrEmpty(prop.Value)) break;
-                            var group1Props = prop.Value.ToString().Split(' ');
-                            group1Props[0] = ((map.DisplayWidth / Game1.tileSize) - int.Parse(group1Props[0]) -
-                                              int.Parse(group1Props[2])).ToString(); // Gotta subtract the width. Can't have a negatively width'd rectangle, after all.
-                            prop.Value.m_value = string.Join(" ", group1Props);
-                            break;
-                        case "BrookSounds":
-                        case "Light":
-                        case "WindowLight":
-                        case "Stumps":
-                        case "Trees":
-                            if (string.IsNullOrEmpty(prop.Value)) break;
-                            var group2Props = prop.Value.ToString().Split(' ');
-                            for (int i = 0; i < group2Props.Length; i += 3)
-                            {
-                                group2Props[i] = ((map.DisplayWidth / Game1.tileSize) - int.Parse(group2Props[i]) - 1)
-                                    .ToString();
-                            }
-                            prop.Value.m_value = string.Join(" ", group2Props);
-                            break;
-                        case "BackwoodsEntry":
-                        case "BusStopEntry":
-                        case "DefaultWarpLocation":
-                        case "EntryLocation":
-                        case "FarmCaveEntry":
-                        case "FarmHouseEntry":
-                        case "ForestEntry":
-                        case "GrandpaShrineLocation":
-                        case "GreenhouseLocation":
-                        case "KitchenStandingLocation":
-                        case "MailboxLocation":
-                        case "PetBowlLocation":
-                        case "ShippingBinLocation":
-                        case "SpouseAreaLocation":
-                        case "SpouseRoomPosition":
-                        case "TravelingCartPosition":
-                        case "WarpTotemEntry":
-                        case "FarmHouseStarterSeedsPosition":
-                            if (string.IsNullOrEmpty(prop.Value)) break;
-                            var group3Props = prop.Value.ToString().Split(' ');
-                            group3Props[0] = ((map.DisplayWidth / Game1.tileSize) - int.Parse(group3Props[0]) - 1)
-                                .ToString();
-                            prop.Value.m_value = string.Join(" ", group3Props);
-                            break;
-                        case "Warp":
-                        case "NPCWarp":
-                            var group4Props = prop.Value.ToString().Split(' ');
-                            for (int i = 0; i < group4Props.Length; i += 5)
-                            {
-                                group4Props[i] = ((map.DisplayWidth / Game1.tileSize) - int.Parse(group4Props[i]) - 1)
-                                    .ToString();
-                            }
-                            prop.Value.m_value = string.Join(" ", group4Props);
-                            break;
-                        case "FarmHouseFurniture":
-                        case "DayTiles":
-                        case "NightTiles":
-                            var group5Props = prop.Value.ToString().Split(' ');
-                            for (int i = 0; i < group5Props.Length; i += 4)
-                            {
-                                group5Props[i + 1] =
-                                    ((map.DisplayWidth / Game1.tileSize) - int.Parse(group5Props[i + 1]) - 1)
-                                    .ToString();
-                                if (prop.Key == "FarmHouseFurniture")
-                                {
-                                    group5Props[i + 3] += (int.Parse(group5Props[i + 3]) + 2).ToString(); // I think this mirrors it horizontally?
-                                }
-                            }
-                            prop.Value.m_value = string.Join(" ", group5Props);
-                            break;
-                        case "Doors":
-                            var group6Props = prop.Value.ToString().Split(' ');
-                            for (int i = 0; i < group6Props.Length; i += 4)
-                            {
-                                group6Props[i] = ((map.DisplayWidth / Game1.tileSize) - int.Parse(group6Props[i]) - 1)
-                                    .ToString();
-                            }
-                            prop.Value.m_value = string.Join(" ", group6Props);
-                            break;
-                    }
-                }
-                catch (Exception e)
-                {
-                    Log.Error($"Error when mirroring property '{prop.Key}' with value '{prop.Value}': {e.Message}");
-                }
-            }
+            return new Vector2(mapWidth - vector.X - 1, vector.Y);
         }
 
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(TbinFormat), nameof(TbinFormat.Load))]
-        static void TbinLoad_Postfix(ref Map __result)
+        public static Point Mirror(this Point point, int mapWidth)
         {
-            __result.MirrorProperties();
-        }
-
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(TideFormat), nameof(TideFormat.Load))]
-        static void TideLoad_Postfix(ref Map __result)
-        {
-            __result.MirrorProperties();
-        }
-
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(Map), nameof(Map.AddLayer))]
-        static void LoadTile_Prefix(ref Layer layer)
-        {
-            layer = layer.MirrorHorizontal();
-        }
-
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(SDisplayDevice), nameof(SDisplayDevice.GetSpriteEffects))]
-        static void GetSpriteEffects_Prefix(ref SpriteEffects __result)
-        {
-            if (__result == SpriteEffects.None) __result = SpriteEffects.FlipHorizontally;
-            else if (__result == SpriteEffects.FlipHorizontally) __result = SpriteEffects.None;
-        }
-    }
-
-    [HarmonyPatch(typeof(SpriteBatcher), nameof(SpriteBatcher.DrawBatch))]
-    public class Patches
-    {
-        static void Prefix(SpriteBatcher __instance, ref Effect effect)
-        {
-            // foreach (var item in __instance._batchItemList)
-            // {
-            //     VertexPositionColorTexture TR = item.vertexTR;
-            //     VertexPositionColorTexture TL = item.vertexTL;
-            //     VertexPositionColorTexture BR = item.vertexBR;
-            //     VertexPositionColorTexture BL = item.vertexBL;
-            //
-            //     var temp = TR.Position.X;
-            //     TR.Position.X = TL.Position.X;
-            //     TL.Position.X = temp;
-            //     temp = BR.Position.X;
-            //     BR.Position.X = BL.Position.X;
-            //     BL.Position.X = temp;
-            //
-            //     temp = TR.Position.Y;
-            //     TR.Position.Y = BR.Position.Y;
-            //     BR.Position.Y = temp;
-            //     temp = TL.Position.Y;
-            //     TL.Position.Y = BL.Position.Y;
-            //     BL.Position.Y = temp;
-            //
-            //     item.vertexTR = TR;
-            //     item.vertexTL = TL;
-            //     item.vertexBR = BR;
-            //     item.vertexBL = BL;
-            //
-            //     try
-            //     {
-            //         // if our tex is in the cache, return
-            //         if (ModEntry.TexDataCache.ContainsKey(item.Texture.Name))
-            //         {
-            //             return;
-            //         }
-            //         var texData = item.Texture;
-            //         // mirror the pixels in the texture, too
-            //         var data = new Color[texData.Width * texData.Height];
-            //     
-            //         texData.GetData(data);
-            //         var newData = new Color[data.Length];
-            //         for (int y = 0; y < texData.Height; y++)
-            //         {
-            //             for (int x = 0; x < texData.Width; x++)
-            //             {
-            //                 newData[y * texData.Width + x] = data[y * texData.Width + (texData.Width - x - 1)];
-            //             }
-            //         }
-            //     
-            //         texData.SetData(newData);
-            //         item.Texture = texData;
-            //         // add the texData.Name to our TexDataCache with its hash code
-            //         ModEntry.TexDataCache.TryAdd(texData.Name, texData.GetHashCode());
-            //     }
-            //     catch (Exception e)
-            //     {
-            //         // Log.Debug(e.Message);
-            //     }
-            // }
-
-            // if (effect is not SpriteEffect efx) return;
-            // Log.Debug("Waa");
-            // var spriteEffect = new SpriteEffect(efx);
-            // var matrix = Matrix.Invert(spriteEffect.TransformMatrix.GetValueOrDefault());
-            // spriteEffect.TransformMatrix = matrix;
-            // effect = spriteEffect;
+            return new Point(mapWidth - point.X - 1, point.Y);
         }
     }
 }

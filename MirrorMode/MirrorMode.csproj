@@ -20,9 +20,14 @@
         <OutputPath>bin\Debug</OutputPath>
     </PropertyGroup>
 
-    <PropertyGroup>
-        <PublicizeAll>true</PublicizeAll>
-    </PropertyGroup>
+    <ItemGroup>
+        <Publicize Include="TMXTile" />
+        <Publicize Include="xTile" />
+        <Publicize Include="StardewModdingAPI" />
+        <Publicize Include="Stardew Valley" />
+        <Publicize Include="StardewValley.GameData" />
+        <Publicize Include="MonoGame.Framework" />
+    </ItemGroup>
 
     <ItemGroup>
         <Reference Include="TMXTile" Private="False">

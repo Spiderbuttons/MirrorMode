@@ -87,13 +87,14 @@ namespace MirrorMode
 
             if (e.Button is SButton.F5)
             {
-                Helper.GameContent.InvalidateCache("Data/Locations");
+                Log.Alert("Unpatching...");
+                Harmony.UnpatchAll(ModManifest.UniqueID);
             }
 
             if (e.Button is SButton.F6)
             {
-                if (!Game1.player.currentLocation.IsOutdoors) Game1.getCharacterFromName("Haley").checkSchedule(Game1.timeOfDay);
-                Game1.getCharacterFromName("Haley").Speed = 10;
+                Log.Alert("Repatching...");
+                Harmony.PatchAll();
             }
         }
 
@@ -233,6 +234,11 @@ namespace MirrorMode
         public static Point Mirror(this Point point, int mapWidth)
         {
             return new Point(mapWidth - point.X - 1, point.Y);
+        }
+
+        public static Microsoft.Xna.Framework.Rectangle Mirror(this Microsoft.Xna.Framework.Rectangle rect, int mapWidth)
+        {
+            return new Microsoft.Xna.Framework.Rectangle(mapWidth - rect.X - (rect.Width - 1), rect.Y, rect.Width, rect.Height);
         }
     }
 }

@@ -6,6 +6,7 @@ using StardewModdingAPI;
 using StardewModdingAPI.Framework.Rendering;
 using StardewModdingAPI.Utilities;
 using StardewValley;
+using StardewValley.Extensions;
 using StardewValley.Locations;
 using xTile;
 using xTile.Dimensions;
@@ -112,14 +113,14 @@ public static class xTilePatches
             var split = prop.Value.ToString().Split(' ');
             try
             {
-                switch (split[0])
+                switch (split[0].ToLower())
                 {
-                    case "MagicWarp":
-                    case "Warp" when prop.Key is "TouchAction":
-                    case "ObeliskWarp":
+                    case "magicwarp":
+                    case "warp" when prop.Key is "touchaction":
+                    case "obeliskwarp":
                         if (Context.IsWorldReady)
                         {
-                            string locName = split[1].Equals("VolcanoEntrance") ? VolcanoDungeon.GetLevelName(0) : split[1];
+                            string locName = split[1].EqualsIgnoreCase("VolcanoEntrance") ? VolcanoDungeon.GetLevelName(0) : split[1];
                             var guaranteedWidth = Game1.getLocationFromName(locName).Map.TileWidth();
                             split[2] = ((guaranteedWidth) - int.Parse(split[2]) - 1)
                                 .ToString();
@@ -137,12 +138,12 @@ public static class xTilePatches
                             ModEntry.MapsToRetry.Add(PathUtilities.NormalizeAssetName(name.BaseName));
                         }
                         break;
-                    case "Warp" when prop.Key is "Action":
-                    case "LockedDoorWarp":
+                    case "warp" when prop.Key.ToLower() is "action":
+                    case "lockeddoorwarp":
                         if (split.Length < 4) break;
                         if (Context.IsWorldReady)
                         {
-                            string locName = split[3].Equals("VolcanoEntrance") ? VolcanoDungeon.GetLevelName(0) : split[3];
+                            string locName = split[3].EqualsIgnoreCase("VolcanoEntrance") ? VolcanoDungeon.GetLevelName(0) : split[3];
                             var guaranteedWidth = Game1.getLocationFromName(locName).Map.TileWidth();
                             split[1] = ((guaranteedWidth) - int.Parse(split[1]) - 1)
                                 .ToString();
@@ -162,11 +163,11 @@ public static class xTilePatches
 
 
                         break;
-                    case "OpenShop":
+                    case "openshop":
                         if (split.Length < 6) break;
                         if (Context.IsWorldReady)
                         {
-                            string locName = split[5].Equals("VolcanoEntrance") ? VolcanoDungeon.GetLevelName(0) : split[5];
+                            string locName = split[5].EqualsIgnoreCase("VolcanoEntrance") ? VolcanoDungeon.GetLevelName(0) : split[5];
                             var guaranteedWidth = Game1.getLocationFromName(locName).Map.TileWidth();
                             split[2] = ((guaranteedWidth) - int.Parse(split[2]) - int.Parse(split[4]) - 1)
                                 .ToString();
@@ -182,7 +183,9 @@ public static class xTilePatches
                         {
                             ModEntry.MapsToRetry.Add(PathUtilities.NormalizeAssetName(name.BaseName));
                         }
-
+                        break;
+                    default:
+                        ModEntry.ModMonitor.LogOnce($"Unable to mirror TileData: {prop.Key} {prop.Value}", LogLevel.Debug);
                         break;
                 }
             }
@@ -200,12 +203,12 @@ public static class xTilePatches
         {
             try
             {
-                switch (prop.Key)
+                switch (prop.Key.ToLower())
                 {
-                    case "ValidBuildRect":
-                    case "SpawnMountainFarmOreRect":
-                    case "ProduceArea":
-                    case "ViewportClamp":
+                    case "validbuildrect":
+                    case "spawnmountainfarmorerect":
+                    case "producearea":
+                    case "viewportclamp":
                         if (string.IsNullOrEmpty(prop.Value)) break;
                         var group1Props = prop.Value.ToString().Split(' ');
                         group1Props[0] = (map.TileWidth() - int.Parse(group1Props[0]) -
@@ -213,11 +216,11 @@ public static class xTilePatches
                             .ToString(); // Gotta subtract the width. Can't have a negatively width'd rectangle, after all.
                         prop.Value.m_value = string.Join(" ", group1Props);
                         break;
-                    case "BrookSounds":
-                    case "Light":
-                    case "WindowLight":
-                    case "Stumps":
-                    case "Trees":
+                    case "brooksounds":
+                    case "light":
+                    case "windowlight":
+                    case "stumps":
+                    case "trees":
                         if (string.IsNullOrEmpty(prop.Value)) break;
                         var group2Props = prop.Value.ToString().Split(' ');
                         for (int i = 0; i < group2Props.Length; i += 3)
@@ -228,32 +231,32 @@ public static class xTilePatches
 
                         prop.Value.m_value = string.Join(" ", group2Props);
                         break;
-                    case "BackwoodsEntry":
-                    case "BusStopEntry":
-                    case "DefaultWarpLocation":
-                    case "EntryLocation":
-                    case "FarmCaveEntry":
-                    case "FarmHouseEntry":
-                    case "ForestEntry":
-                    case "GrandpaShrineLocation":
-                    case "GreenhouseLocation":
-                    case "KitchenStandingLocation":
-                    case "MailboxLocation":
-                    case "PetBowlLocation":
-                    case "ShippingBinLocation":
-                    case "SpouseAreaLocation":
-                    case "SpouseRoomPosition":
-                    case "TravelingCartPosition":
-                    case "WarpTotemEntry":
-                    case "FarmHouseStarterSeedsPosition":
+                    case "backwoodsentry":
+                    case "busstopentry":
+                    case "defaultwarplocation":
+                    case "entrylocation":
+                    case "farmcaveentry":
+                    case "farmhouseentry":
+                    case "forestentry":
+                    case "grandpashrinelocation":
+                    case "greenhouselocation":
+                    case "kitchenstandinglocation":
+                    case "mailboxlocation":
+                    case "petbowllocation":
+                    case "shippingbinlocation":
+                    case "spousearealocation":
+                    case "spouseroomposition":
+                    case "travelingcartposition":
+                    case "warptotementry":
+                    case "farmhousestarterseedsposition":
                         if (string.IsNullOrEmpty(prop.Value)) break;
                         var group3Props = prop.Value.ToString().Split(' ');
                         group3Props[0] = ((map.TileWidth()) - int.Parse(group3Props[0]) - 1)
                             .ToString();
                         prop.Value.m_value = string.Join(" ", group3Props);
                         break;
-                    case "Warp":
-                    case "NPCWarp":
+                    case "warp":
+                    case "npcwarp":
                         var group4Props = prop.Value.ToString().Split(' ');
                         for (int i = 0; i < group4Props.Length; i += 5)
                         {
@@ -261,7 +264,7 @@ public static class xTilePatches
                                 .ToString();
                             if (Context.IsWorldReady)
                             {
-                                string locName = group4Props[i+2].Equals("VolcanoEntrance") ? VolcanoDungeon.GetLevelName(0) : group4Props[i + 2];
+                                string locName = group4Props[i+2].EqualsIgnoreCase("VolcanoEntrance") ? VolcanoDungeon.GetLevelName(0) : group4Props[i + 2];
                                 var guaranteedWidth = Game1.getLocationFromName(locName).Map.TileWidth();
                                 group4Props[i + 3] = ((guaranteedWidth) - int.Parse(group4Props[i + 3]) - 1)
                                     .ToString();
@@ -280,16 +283,16 @@ public static class xTilePatches
 
                         prop.Value.m_value = string.Join(" ", group4Props);
                         break;
-                    case "FarmHouseFurniture":
-                    case "DayTiles":
-                    case "NightTiles":
+                    case "farmhousefurniture":
+                    case "daytiles":
+                    case "nighttiles":
                         var group5Props = prop.Value.ToString().Split(' ');
                         for (int i = 0; i < group5Props.Length; i += 4)
                         {
                             group5Props[i + 1] =
                                 ((map.TileWidth()) - int.Parse(group5Props[i + 1]) - 1)
                                 .ToString();
-                            if (prop.Key == "FarmHouseFurniture")
+                            if (prop.Key.ToLower() == "farmhousefurniture")
                             {
                                 group5Props[i + 3] +=
                                     (int.Parse(group5Props[i + 3]) + 2)
@@ -299,7 +302,7 @@ public static class xTilePatches
 
                         prop.Value.m_value = string.Join(" ", group5Props);
                         break;
-                    case "Doors":
+                    case "doors":
                         var group6Props = prop.Value.ToString().Split(' ');
                         for (int i = 0; i < group6Props.Length; i += 4)
                         {
@@ -308,6 +311,9 @@ public static class xTilePatches
                         }
 
                         prop.Value.m_value = string.Join(" ", group6Props);
+                        break;
+                    default:
+                        ModEntry.ModMonitor.LogOnce($"Unable to mirror map property: {prop.Key} {prop.Value}", LogLevel.Debug);
                         break;
                 }
             }

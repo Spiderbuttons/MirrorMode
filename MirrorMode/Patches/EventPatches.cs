@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using MirrorMode.Helpers;
+using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Extensions;
 using StardewValley.Locations;
@@ -66,24 +67,42 @@ public class EventPatches
 
     */
 
+    private static GameLocation? _currentMapForParsing = null;
+
+    private static GameLocation CurrentMapForParsing => _currentMapForParsing ??= Game1.currentLocation!;
+    
+    private static Dictionary<NPC, int> showFrameFlips = new();
+    private static Dictionary<NPC, HashSet<int>> animateFlips = new();
+
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(Event.exitEvent))]
+    static void exitEvent_Postfix()
+    {
+        _currentMapForParsing = null;
+        showFrameFlips.Clear();
+        animateFlips.Clear();
+    }
+
     [HarmonyPrefix]
     [HarmonyPatch(nameof(Event.InitializeEvent))]
     static void InitializeEvent_Prefix(GameLocation location)
     {
+        Log.Debug("Mirroring second event command: " + Game1.CurrentEvent.eventCommands[1]);
         string[] args = ArgUtility.SplitQuoteAware(Game1.CurrentEvent.eventCommands[1], ' ', keepQuotesAndEscapes: true);
         if (ArgUtility.TryGetPoint(args, 0, out var viewport, out _))
         {
-            args[0] = viewport.Mirror(location.Map.TileWidth()).X.ToString();
+            args[0] = viewport.Mirror(CurrentMapForParsing.Map.TileWidth()).X.ToString();
         }
         Game1.CurrentEvent.eventCommands[1] = string.Join(" ", args);
         
+        Log.Debug("Mirroring third event command: " + Game1.CurrentEvent.eventCommands[2]);
         args = ArgUtility.SplitQuoteAware(Game1.CurrentEvent.eventCommands[2], ' ', keepQuotesAndEscapes: true);
         for (int i = 0; i < args.Length; i += 4)
         {
             if (ArgUtility.TryGetPoint(args, i + 1, out var tile, out _) &&
                 ArgUtility.TryGetDirection(args, i + 3, out int dir1, out _))
             {
-                args[i + 1] = tile.Mirror(location.Map.TileWidth()).X.ToString();
+                args[i + 1] = tile.Mirror(CurrentMapForParsing.Map.TileWidth()).X.ToString();
                 args[i + 3] = dir1 switch
                 {
                     1 => "3",
@@ -93,91 +112,143 @@ public class EventPatches
             }
         }
         Game1.CurrentEvent.eventCommands[2] = string.Join(" ", args);
+        if (!string.IsNullOrEmpty(Game1.player.locationBeforeForcedEvent.Value)) Game1.player.positionBeforeEvent.Mirror(Game1.getLocationFromName(Game1.player.locationBeforeForcedEvent.Value).Map.TileWidth());
+    }
+
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(Event.DefaultCommands), nameof(Event.DefaultCommands.MoveToSoup))]
+    static bool MoveToSoup_Prefix(Event @event)
+    {
+        if (Game1.year % 2 == 1)
+        {
+            @event.setUpAdvancedMove(new string[9] { "", "Gus", "false", "0", "-1", "-5", "0", "4", "1000" });
+            @event.setUpAdvancedMove(new string[5] { "", "Jodi", "false", "0", "-2" });
+            @event.setUpAdvancedMove(new string[11]
+            {
+                "", "Clint", "false", "0", "1", "1", "0", "0", "3", "2", "0"
+            });
+            @event.setUpAdvancedMove(new string[5] { "", "Emily", "false", "-3", "0" });
+            @event.setUpAdvancedMove(new string[7] { "", "Pam", "false", "0", "2", "-7", "0" });
+        }
+        else
+        {
+            @event.setUpAdvancedMove(new string[5] { "", "Pierre", "false", "-3", "0" });
+            @event.setUpAdvancedMove(new string[9] { "", "Pam", "false", "0", "2", "4", "0", "0", "1" });
+            @event.setUpAdvancedMove(new string[9] { "", "Abigail", "false", "-4", "0", "0", "-3", "3", "4000" });
+            @event.setUpAdvancedMove(new string[9] { "", "Alex", "false", "5", "0", "0", "-1", "1", "2000" });
+            @event.setUpAdvancedMove(new string[5] { "", "Gus", "false", "0", "-1" });
+        }
+        @event.CurrentCommand++;
+        return false;
+    }
+    
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(Event.DefaultCommands), nameof(Event.DefaultCommands.LoadActors))]
+    static void LoadActors_Postfix(Event @event)
+    {
+        if (@event.actors is not null)
+        {
+            foreach (var npc in @event.actors)
+            {
+                if (npc.FacingDirection != 0 && npc.FacingDirection != 2) Log.Debug($"{npc.Name} facing {npc.FacingDirection} before");
+                npc.faceDirection(npc.FacingDirection switch
+                {
+                    1 => 3,
+                    3 => 1,
+                    _ => npc.FacingDirection
+                });
+                if (npc.FacingDirection != 0 && npc.FacingDirection != 2) Log.Debug($"{npc.Name} facing {npc.FacingDirection} after");
+            }
+        }
+
+        Log.Alert("Loaded actors");
     }
 
     [HarmonyPrefix]
     [HarmonyPatch(nameof(Event.tryEventCommand))]
     static void tryEventCommand_Prefix(GameLocation location, string[] args)
     {
-        if (string.Join(" ", args).Equals(Game1.CurrentEvent.eventCommands[1]))
-        {
-            if (ArgUtility.TryGetPoint(args, 0, out var tile, out _))
-            {
-                args[0] = tile.Mirror(Game1.currentLocation.Map.TileWidth()).X.ToString();
-            }
+        _currentMapForParsing = location;
+        bool flippedActorThisFrame = false;
 
-            return;
-        }
-
-        if (string.Join(" ", args).Equals(Game1.CurrentEvent.eventCommands[2]))
-        {
-            for (int i = 0; i < args.Length; i += 4)
-            {
-                if (ArgUtility.TryGetPoint(args, i + 1, out var tile, out _) &&
-                    ArgUtility.TryGetDirection(args, i + 3, out int dir1, out _))
-                {
-                    args[i + 1] = tile.Mirror(Game1.currentLocation.Map.TileWidth()).X.ToString();
-                    args[i + 3] = dir1 switch
-                    {
-                        1 => "3",
-                        3 => "1",
-                        _ => args[i + 3]
-                    };
-                }
-            }
-
-            return;
-        }
-
-        // Log.Debug($"Attempting to mirror command '{string.Join(" ", args)}'");
+        ModEntry.ModMonitor.LogOnce($"Attempting to mirror command '{string.Join(" ", args)}'", LogLevel.Debug);
+        ModEntry.ModMonitor.LogOnce($"Before: {string.Join(" ", args)}", LogLevel.Warn);
         var split = args;
         switch (split[0].ToLower())
         {
             case "changelocation":
                 Log.Warn("Changing location to " + split[1]);
-                var newLoc = Game1.getLocationFromName(split[1]);
+                var newMap = Game1.getLocationFromName(split[1]);
                 if (Game1.CurrentEvent.actors is not null)
                 {
                     foreach (var npc in Game1.CurrentEvent.actors)
                     {
-                        npc.setTilePosition(npc.Tile.Mirror(location.Map.TileWidth()).ToPoint());
-                        npc.setTilePosition(npc.Tile.Mirror(newLoc.Map.TileWidth()).ToPoint());
+                        Log.Info($"Correcting {npc.Name} tile position from {npc.Tile}");
+                        npc.setTilePosition(npc.Tile.Mirror(CurrentMapForParsing.Map.TileWidth()).ToPoint());
+                        npc.setTilePosition(npc.Tile.Mirror(newMap.Map.TileWidth()).ToPoint());
+                        Log.Info($"Corrected {npc.Name} tile position to {npc.Tile}");
+                        var cont = Game1.CurrentEvent.npcControllers.FindIndex(cont =>
+                            cont.puppet.Name.EqualsIgnoreCase(npc.Name));
+                        if (cont is not -1)
+                        {
+                            foreach (var path in Game1.CurrentEvent.npcControllers[cont].path)
+                            {
+                                path.Mirror(CurrentMapForParsing.Map.TileWidth());
+                                path.Mirror(newMap.Map.TileWidth());
+                                
+                            }
+
+                            Game1.CurrentEvent.npcControllers[cont] = new NPCController(Game1.CurrentEvent.npcControllers[cont].puppet, Game1.CurrentEvent.npcControllers[cont].path, Game1.CurrentEvent.npcControllers[cont].loop, Game1.CurrentEvent.npcControllers[cont].behaviorAtEnd);
+                        }
+                        npc.FacingDirection = npc.FacingDirection switch
+                        {
+                            1 => 3,
+                            3 => 1,
+                            _ => npc.FacingDirection
+                        };
                     }
                 }
-
+                
                 if (Game1.CurrentEvent.farmerActors is not null)
                 {
                     foreach (var farmer in Game1.CurrentEvent.farmerActors)
                     {
-                        farmer.Position = farmer.Position.Mirror(location.Map.TileWidth() * 64);
-                        farmer.Position = farmer.Position.Mirror(newLoc.Map.TileWidth() * 64);
+                        farmer.Position = farmer.Position.Mirror(CurrentMapForParsing.Map.TileWidth() * 64);
+                        farmer.Position = farmer.Position.Mirror(newMap.Map.TileWidth() * 64);
+                        farmer.FacingDirection = farmer.FacingDirection switch
+                        {
+                            1 => 3,
+                            3 => 1,
+                            _ => farmer.FacingDirection
+                        };
                     }
                 }
-
+                
                 if (Game1.CurrentEvent.props is not null)
                 {
                     foreach (var obj in Game1.CurrentEvent.props)
                     {
-                        obj.TileLocation = obj.TileLocation.Mirror(location.Map.TileWidth());
-                        obj.TileLocation = obj.TileLocation.Mirror(newLoc.Map.TileWidth());
+                        obj.TileLocation = obj.TileLocation.Mirror(CurrentMapForParsing.Map.TileWidth());
+                        obj.TileLocation = obj.TileLocation.Mirror(newMap.Map.TileWidth());
                     }
                 }
-
+                
                 if (Game1.CurrentEvent.festivalProps is not null)
                 {
                     foreach (var prop in Game1.CurrentEvent.festivalProps)
                     {
                         prop.drawRect = new Microsoft.Xna.Framework.Rectangle(
-                            location.Map.TileWidth() - prop.drawRect.X - prop.drawRect.Width,
+                            CurrentMapForParsing.Map.TileWidth() - prop.drawRect.X - prop.drawRect.Width,
                             prop.drawRect.Y, prop.drawRect.Width, prop.drawRect.Height);
                         prop.drawRect = new Microsoft.Xna.Framework.Rectangle(
-                            newLoc.Map.TileWidth() - prop.drawRect.X - prop.drawRect.Width,
+                            newMap.Map.TileWidth() - prop.drawRect.X - prop.drawRect.Width,
                             prop.drawRect.Y, prop.drawRect.Width, prop.drawRect.Height);
                     }
                 }
-
-                Game1.viewport.X = location.Map.TileWidth() - Game1.viewport.X - Game1.viewport.Width;
-                Game1.viewport.X = newLoc.Map.TileWidth() - Game1.viewport.X - Game1.viewport.Width;
+                
+                Game1.viewport.X = CurrentMapForParsing.Map.TileWidth() - Game1.viewport.X - Game1.viewport.Width;
+                Game1.viewport.X = newMap.Map.TileWidth() - Game1.viewport.X - Game1.viewport.Width;
+                _currentMapForParsing = newMap;
                 break;
             case "changetotemporarymap":
                 Log.Warn("Changing map to " + split[1]);
@@ -186,44 +257,72 @@ public class EventPatches
                 {
                     foreach (var npc in Game1.CurrentEvent.actors)
                     {
-                        npc.setTilePosition(npc.Tile.Mirror(location.Map.TileWidth()).ToPoint());
+                        Log.Info($"Correcting {npc.Name} tile position from {npc.Tile}");
+                        npc.setTilePosition(npc.Tile.Mirror(CurrentMapForParsing.Map.TileWidth()).ToPoint());
                         npc.setTilePosition(npc.Tile.Mirror(tempMap.Map.TileWidth()).ToPoint());
+                        Log.Info($"Corrected {npc.Name} tile position to {npc.Tile}");
+                        var cont = Game1.CurrentEvent.npcControllers.FindIndex(cont =>
+                            cont.puppet.Name.EqualsIgnoreCase(npc.Name));
+                        if (cont is not -1)
+                        {
+                            foreach (var path in Game1.CurrentEvent.npcControllers[cont].path)
+                            {
+                                path.Mirror(CurrentMapForParsing.Map.TileWidth());
+                                path.Mirror(tempMap.Map.TileWidth());
+                                
+                            }
+
+                            Game1.CurrentEvent.npcControllers[cont] = new NPCController(Game1.CurrentEvent.npcControllers[cont].puppet, Game1.CurrentEvent.npcControllers[cont].path, Game1.CurrentEvent.npcControllers[cont].loop, Game1.CurrentEvent.npcControllers[cont].behaviorAtEnd);
+                        }
+                        npc.FacingDirection = npc.FacingDirection switch
+                        {
+                            1 => 3,
+                            3 => 1,
+                            _ => npc.FacingDirection
+                        };
                     }
                 }
-
+                
                 if (Game1.CurrentEvent.farmerActors is not null)
                 {
                     foreach (var farmer in Game1.CurrentEvent.farmerActors)
                     {
-                        farmer.Position = farmer.Position.Mirror(location.Map.TileWidth() * 64);
+                        farmer.Position = farmer.Position.Mirror(CurrentMapForParsing.Map.TileWidth() * 64);
                         farmer.Position = farmer.Position.Mirror(tempMap.Map.TileWidth() * 64);
+                        farmer.FacingDirection = farmer.FacingDirection switch
+                        {
+                            1 => 3,
+                            3 => 1,
+                            _ => farmer.FacingDirection
+                        };
                     }
                 }
-
+                
                 if (Game1.CurrentEvent.props is not null)
                 {
                     foreach (var obj in Game1.CurrentEvent.props)
                     {
-                        obj.TileLocation = obj.TileLocation.Mirror(location.Map.TileWidth());
+                        obj.TileLocation = obj.TileLocation.Mirror(CurrentMapForParsing.Map.TileWidth());
                         obj.TileLocation = obj.TileLocation.Mirror(tempMap.Map.TileWidth());
                     }
                 }
-
+                
                 if (Game1.CurrentEvent.festivalProps is not null)
                 {
                     foreach (var prop in Game1.CurrentEvent.festivalProps)
                     {
                         prop.drawRect = new Microsoft.Xna.Framework.Rectangle(
-                            location.Map.TileWidth() - prop.drawRect.X - prop.drawRect.Width,
+                            CurrentMapForParsing.Map.TileWidth() - prop.drawRect.X - prop.drawRect.Width,
                             prop.drawRect.Y, prop.drawRect.Width, prop.drawRect.Height);
                         prop.drawRect = new Microsoft.Xna.Framework.Rectangle(
                             tempMap.Map.TileWidth() - prop.drawRect.X - prop.drawRect.Width,
                             prop.drawRect.Y, prop.drawRect.Width, prop.drawRect.Height);
                     }
                 }
-
-                Game1.viewport.X = location.Map.TileWidth() - Game1.viewport.X - Game1.viewport.Width;
+                
+                Game1.viewport.X = CurrentMapForParsing.Map.TileWidth() - Game1.viewport.X - Game1.viewport.Width;
                 Game1.viewport.X = tempMap.Map.TileWidth() - Game1.viewport.X - Game1.viewport.Width;
+                _currentMapForParsing = tempMap;
                 break;
 
             case "move":
@@ -245,7 +344,13 @@ public class EventPatches
                     }
                 }
 
-                Log.Warn("Mirrored move command: " + string.Join(" ", split));
+                if (!Game1.CurrentEvent.IsFarmerActorId(split[1], out _))
+                {
+                    var movingNpc = Game1.CurrentEvent.getActorByName(split[1]);
+                    if (movingNpc is null) break;
+                    movingNpc.flip = showFrameFlips.ContainsKey(movingNpc) && !movingNpc.flip;
+                }
+
                 break;
             case "warpfarmers":
                 int nonWarpFields = (split.Length - 1) % 3;
@@ -261,7 +366,7 @@ public class EventPatches
                         3 => "1",
                         _ => split[defaultsIndex]
                     };
-                    split[defaultsIndex + 1] = defaultPosition.Mirror(location.Map.TileWidth()).X.ToString();
+                    split[defaultsIndex + 1] = defaultPosition.Mirror(CurrentMapForParsing.Map.TileWidth()).X.ToString();
                     split[defaultsIndex + 3] = defaultFacingDirection switch
                     {
                         1 => "3",
@@ -273,7 +378,7 @@ public class EventPatches
                         if (ArgUtility.TryGetPoint(split, j, out var position, out _) &&
                             ArgUtility.TryGetDirection(split, j + 2, out var facingDirection, out _))
                         {
-                            split[j] = position.Mirror(location.Map.TileWidth()).X.ToString();
+                            split[j] = position.Mirror(CurrentMapForParsing.Map.TileWidth()).X.ToString();
                             split[j + 2] = facingDirection switch
                             {
                                 1 => "3",
@@ -291,10 +396,10 @@ public class EventPatches
             case "removeobject":
             case "removetile":
             case "removesprite":
-            case "viewport" when !split[1].EqualsIgnoreCase("move"):
+            case "viewport" when !split[1].EqualsIgnoreCase("move") && !split[1].EqualsIgnoreCase("player"):
                 if (split.Length >= 3)
                 {
-                    split[1] = (location.Map.TileWidth() - int.Parse(split[1]) - 1).ToString();
+                    split[1] = (CurrentMapForParsing.Map.TileWidth() - int.Parse(split[1]) - 1).ToString();
                 }
 
                 break;
@@ -302,28 +407,33 @@ public class EventPatches
             case "addprop":
                 if (split.Length >= 5)
                 {
-                    split[2] = (location.Map.TileWidth() - int.Parse(split[2]) - int.Parse(split[5]))
+                    split[2] = (CurrentMapForParsing.Map.TileWidth() - int.Parse(split[2]) - int.Parse(split[5]))
                         .ToString();
                 }
-                else split[2] = (location.Map.TileWidth() - int.Parse(split[2]) - 1).ToString();
+                else split[2] = (CurrentMapForParsing.Map.TileWidth() - int.Parse(split[2]) - 1).ToString();
 
                 break;
             case "makeinvisible":
                 if (split.Length >= 3)
                 {
-                    split[1] = (location.Map.TileWidth() - int.Parse(split[1]) - int.Parse(split[3]))
+                    split[1] = (CurrentMapForParsing.Map.TileWidth() - int.Parse(split[1]) - int.Parse(split[3]))
                         .ToString();
                 }
-                else split[1] = (location.Map.TileWidth() - int.Parse(split[1]) - 1).ToString();
+                else split[1] = (CurrentMapForParsing.Map.TileWidth() - int.Parse(split[1]) - 1).ToString();
 
                 break;
             case "addlantern":
             case "changemaptile":
-            case "end" when split.Length >= 2 && split[1].EqualsIgnoreCase("position"):
             case "warp":
                 if (split.Length >= 3)
                 {
-                    split[2] = (location.Map.TileWidth() - int.Parse(split[2]) - 1).ToString();
+                    split[2] = (CurrentMapForParsing.Map.TileWidth() - int.Parse(split[2]) - 1).ToString();
+                }
+                break;
+            case "end" when split.Length >= 2 && split[1].EqualsIgnoreCase("position"):
+                if (split.Length >= 3)
+                {
+                    split[2] = (Game1.CurrentEvent.exitLocation.Location.Map.TileWidth() - int.Parse(split[2]) - 1).ToString();
                 }
 
                 break;
@@ -339,7 +449,7 @@ public class EventPatches
             case "addtemporaryactor":
                 if (split.Length >= 5)
                 {
-                    split[4] = (location.Map.TileWidth() - int.Parse(split[2])).ToString();
+                    split[4] = (CurrentMapForParsing.Map.TileWidth() - int.Parse(split[2])).ToString();
                 }
 
                 if (split.Length >= 7)
@@ -359,7 +469,7 @@ public class EventPatches
             case "temporarysprite":
                 if (split.Length >= 2)
                 {
-                    split[1] = (location.Map.TileWidth() - int.Parse(split[1]) - 1).ToString();
+                    split[1] = (CurrentMapForParsing.Map.TileWidth() - int.Parse(split[1]) - 1).ToString();
                 }
 
                 if (split.Length >= 7)
@@ -369,7 +479,7 @@ public class EventPatches
 
                 break;
             case "temporaryanimatedsprite":
-                split[9] = (location.Map.TileWidth() - int.Parse(split[9]) - 1).ToString();
+                split[9] = (CurrentMapForParsing.Map.TileWidth() - int.Parse(split[9]) - 1).ToString();
                 split[12] = (!bool.Parse(split[12])).ToString();
                 break;
             case "advancedmove":
@@ -378,18 +488,54 @@ public class EventPatches
                     if (!split[i].Equals("0") && split[i + 1].Equals("0"))
                     {
                         split[i] = (int.Parse(split[i]) * -1).ToString();
+                    } else if (!split[i].Equals("0") && !split[i + 1].Equals("0"))
+                    {
+                        split[i] = split[i] switch 
+                        {
+                            "1" => "3",
+                            "3" => "1",
+                            _ => split[i]
+                        };
                     }
                 }
 
                 break;
-            case "animate":
             case "showkissframe":
             case "showframe":
                 if (bool.TryParse(split[^1], out var flip))
                 {
                     split[^1] = (!flip).ToString();
                 }
+                else
+                {
+                    split = split.AddItem("true").ToArray();
+                }
 
+                if (!Game1.CurrentEvent.IsFarmerActorId(split[1], out _))
+                {
+                    var npc = Game1.CurrentEvent.getActorByName(split[1]);
+                    if (npc is null) break;
+                    npc.flip = true;
+                    showFrameFlips.TryAdd(npc, int.Parse(split[2]));
+                }
+
+                break;
+            case "animate":
+                if (bool.TryParse(split[2], out var flip2))
+                {
+                    split[2] = (!flip2).ToString();
+                }
+                var npc2 = Game1.CurrentEvent.getActorByName(split[1]);
+                if (npc2 is null) break;
+                if (!animateFlips.ContainsKey(npc2))
+                {
+                    animateFlips.TryAdd(npc2, new HashSet<int>());
+                }
+                for (int i = 5; i < split.Length; i++)
+                {
+                    animateFlips[npc2].Add(int.Parse(split[i]));
+                }
+                npc2.flip = showFrameFlips.ContainsKey(npc2) && !npc2.flip;
                 break;
             case "facedirection":
                 if (ArgUtility.TryGetDirection(split, 2, out int dir3, out _, null))
@@ -404,270 +550,6 @@ public class EventPatches
 
                 break;
         }
+        ModEntry.ModMonitor.LogOnce($"After: {string.Join(" ", split)}", LogLevel.Warn);
     }
 }
-
-// [HarmonyPostfix]
-// [HarmonyPatch(nameof(Event.ParseCommands))]
-// static void ParseCommands_Postfix(string[] __result)
-// {
-//     var loc = Game1.currentLocation;
-//     var setupOne = ArgUtility.SplitBySpaceQuoteAware(__result[1]);
-//     var setupTwo = ArgUtility.SplitBySpaceQuoteAware(__result[2]);
-//     if (setupOne.Length == 2)
-//     {
-//         if (ArgUtility.TryGetPoint(setupOne, 0, out var tile, out _))
-//         {
-//             setupOne[0] = tile.Mirror(Game1.currentLocation.Map.TileWidth()).X.ToString();
-//         }
-//         __result[1] = string.Join(" ", setupOne);
-//     }
-//     if (setupTwo.Length > 0)
-//     {
-//         for (int i = 0; i < setupTwo.Length; i += 4)
-//         {
-//             if (ArgUtility.TryGetPoint(setupTwo, i + 1, out var tile, out _) &&
-//                 ArgUtility.TryGetDirection(setupTwo, i + 3, out int dir1, out _))
-//             {
-//                 setupTwo[i + 1] = tile.Mirror(Game1.currentLocation.Map.TileWidth()).X.ToString();
-//                 setupTwo[i + 3] = dir1 switch
-//                 {
-//                     1 => "3",
-//                     3 => "1",
-//                     _ => setupTwo[i + 3]
-//                 };
-//             }
-//         }
-//         __result[2] = string.Join(" ", setupTwo);
-//     }
-//     if (__result.Length <= 3) return;
-//     for (int command = 2; command < __result.Length; command++)
-//     {
-//         Log.Debug($"Attempting to mirror command '{__result[command]}'");
-//         var split = ArgUtility.SplitQuoteAware(__result[command], ' ', keepQuotesAndEscapes: true);
-//         switch (split[0].ToLower())
-//         {
-//             case "changelocation":
-//                 Log.Warn("Changing location to " + split[1]);
-//                 loc = Game1.getLocationFromName(split[1]);
-//
-//                 if (Game1.CurrentEvent.actors is not null)
-//                 {
-//                     foreach (var npc in Game1.CurrentEvent.actors)
-//                     {
-//                         npc.setTilePosition(npc.Tile.Mirror(loc.Map.TileWidth()).ToPoint());
-//                     }
-//                 }
-//
-//                 if (Game1.CurrentEvent.farmerActors is not null)
-//                 {
-//                     foreach (var farmer in Game1.CurrentEvent.farmerActors)
-//                     {
-//                         farmer.Position = farmer.Position.Mirror(loc.Map.TileWidth() * 64);
-//                     }
-//                 }
-//
-//                 if (Game1.CurrentEvent.props is not null)
-//                 {
-//                     foreach (var obj in Game1.CurrentEvent.props)
-//                     {
-//                         obj.TileLocation = obj.TileLocation.Mirror(loc.Map.TileWidth());
-//                     }
-//                 }
-//
-//                 if (Game1.CurrentEvent.festivalProps is not null)
-//                 {
-//                     foreach (var prop in Game1.CurrentEvent.festivalProps)
-//                     {
-//                         prop.drawRect = new Microsoft.Xna.Framework.Rectangle(
-//                             loc.Map.TileWidth() - prop.drawRect.X - prop.drawRect.Width,
-//                             prop.drawRect.Y, prop.drawRect.Width, prop.drawRect.Height);
-//                     }
-//                 }
-//
-//                 Game1.viewport = new Rectangle(loc.Map.TileWidth() - Game1.viewport.X - Game1.viewport.Width, Game1.viewport.Y,
-//                     Game1.viewport.Width, Game1.viewport.Height);
-//                 break;
-//             case "changetotemporarymap":
-//                 Log.Warn("Changing map to " + split[1]);
-//                 loc = ((split[1] == "Town") ? new Town("Maps\\Town", "Temp") : ((Game1.CurrentEvent.isFestival && split[1].Contains("Town")) ? new Town("Maps\\" + split[1], "Temp") : new GameLocation("Maps\\" + split[1], "Temp")));
-//                 break;
-//             
-//             case "move":
-//                 if (split.Length > 2)
-//                 {
-//                     for (int i = 1; i < split.Length && ArgUtility.HasIndex(split, i + 3); i += 4)
-//                     {
-//                         if (ArgUtility.TryGetPoint(split, i + 1, out var tile, out _) &&
-//                             ArgUtility.TryGetDirection(split, i + 3, out int dir1, out _))
-//                         {
-//                             split[i + 1] = (int.Parse(split[i + 1]) * -1).ToString();
-//                             split[i + 3] = dir1 switch
-//                             {
-//                                 1 => "3",
-//                                 3 => "1",
-//                                 _ => split[i + 3]
-//                             };
-//                         }
-//                     }
-//                 }
-//                 Log.Warn("Mirrored move command: " + string.Join(" ", split));
-//                 break;
-//             case "warpfarmers":
-//                 int nonWarpFields = (split.Length - 1) % 3;
-//                 if (split.Length < 5 || nonWarpFields != 1) break;
-//                 int defaultsIndex = split.Length - 4;
-//                 if (ArgUtility.TryGetDirection(split, defaultsIndex, out var offsetDirection, out _) &&
-//                     ArgUtility.TryGetPoint(split, defaultsIndex + 1, out var defaultPosition, out _) &&
-//                     ArgUtility.TryGetDirection(split, defaultsIndex + 3, out var defaultFacingDirection, out _))
-//                 {
-//                     split[defaultsIndex] = offsetDirection switch
-//                     {
-//                         1 => "3",
-//                         3 => "1",
-//                         _ => split[defaultsIndex]
-//                     };
-//                     split[defaultsIndex + 1] = defaultPosition.Mirror(loc.Map.TileWidth()).X.ToString();
-//                     split[defaultsIndex + 3] = defaultFacingDirection switch
-//                     {
-//                         1 => "3",
-//                         3 => "1",
-//                         _ => split[defaultsIndex + 3]
-//                     };
-//                     for (int j = 1; j < defaultsIndex; j += 3)
-//                     {
-//                         if (ArgUtility.TryGetPoint(split, j, out var position, out _) &&
-//                             ArgUtility.TryGetDirection(split, j + 2, out var facingDirection, out _))
-//                         {
-//                             split[j] = position.Mirror(loc.Map.TileWidth()).X.ToString();
-//                             split[j + 2] = facingDirection switch
-//                             {
-//                                 1 => "3",
-//                                 3 => "1",
-//                                 _ => split[j + 2]
-//                             };
-//                         }
-//                     }
-//                 }
-//                 break;
-//             case "addbigprop":
-//             case "addobject":
-//             case "doaction":
-//             case "removeobject":
-//             case "removetile":
-//             case "removesprite":
-//             case "viewport" when !split[1].EqualsIgnoreCase("move"):
-//                 if (split.Length >= 3)
-//                 {
-//                     split[1] = (loc.Map.TileWidth() - int.Parse(split[1]) - 1).ToString();
-//                 }
-//
-//                 break;
-//             case "addfloorprop":
-//             case "addprop":
-//                 if (split.Length >= 5)
-//                 {
-//                     split[2] = (loc.Map.TileWidth() - int.Parse(split[2]) - int.Parse(split[5]))
-//                         .ToString();
-//                 }
-//                 else split[2] = (loc.Map.TileWidth() - int.Parse(split[2]) - 1).ToString();
-//
-//                 break;
-//             case "makeinvisible":
-//                 if (split.Length >= 3)
-//                 {
-//                     split[1] = (loc.Map.TileWidth() - int.Parse(split[1]) - int.Parse(split[3]))
-//                         .ToString();
-//                 }
-//                 else split[1] = (loc.Map.TileWidth() - int.Parse(split[1]) - 1).ToString();
-//
-//                 break;
-//             case "addlantern":
-//             case "changemaptile":
-//             case "end" when split.Length >= 2 && split[1].EqualsIgnoreCase("position"):
-//             case "warp":
-//                 if (split.Length >= 3)
-//                 {
-//                     split[2] = (loc.Map.TileWidth() - int.Parse(split[2]) - 1).ToString();
-//                 }
-//
-//                 break;
-//             case "positionoffset":
-//             case "viewport" when split[1].EqualsIgnoreCase("move"):
-//             case "drawoffset":
-//                 if (split.Length >= 3)
-//                 {
-//                     split[2] = (int.Parse(split[2]) * -1).ToString();
-//                 }
-//                 break;
-//             case "addtemporaryactor":
-//                 if (split.Length >= 5)
-//                 {
-//                     split[4] = (loc.Map.TileWidth() - int.Parse(split[2])).ToString();
-//                 }
-//
-//                 if (split.Length >= 7)
-//                 {
-//                     if (ArgUtility.TryGetDirection(split, 6, out int dir2, out _, null))
-//                     {
-//                         split[6] = dir2 switch
-//                         {
-//                             1 => "3",
-//                             3 => "1",
-//                             _ => split[6]
-//                         };
-//                     }
-//                 }
-//
-//                 break;
-//             case "temporarysprite":
-//                 if (split.Length >= 2)
-//                 {
-//                     split[1] = (loc.Map.TileWidth() - int.Parse(split[1]) - 1).ToString();
-//                 }
-//
-//                 if (split.Length >= 7)
-//                 {
-//                     split[6] = (!bool.Parse(split[6])).ToString();
-//                 }
-//
-//                 break;
-//             case "temporaryanimatedsprite":
-//                 split[9] = (loc.Map.TileWidth() - int.Parse(split[9]) - 1).ToString();
-//                 split[12] = (!bool.Parse(split[12])).ToString();
-//                 break;
-//             case "advancedmove":
-//                 for (int i = 3; i < split.Length; i += 2)
-//                 {
-//                     if (!split[i].Equals("0") && split[i + 1].Equals("0"))
-//                     {
-//                         split[i] = (int.Parse(split[i]) * -1).ToString();
-//                     }
-//                 }
-//
-//                 break;
-//             case "animate":
-//             case "showkissframe":
-//             case "showframe":
-//                 if (bool.TryParse(split[^1], out var flip))
-//                 {
-//                     split[^1] = (!flip).ToString();
-//                 }
-//
-//                 break;
-//             case "facedirection":
-//                 if (ArgUtility.TryGetDirection(split, 2, out int dir3, out _, null))
-//                 {
-//                     split[2] = dir3 switch
-//                     {
-//                         1 => "3",
-//                         3 => "1",
-//                         _ => split[2]
-//                     };
-//                 }
-//                 break;
-//         }
-//         __result[command] = string.Join(" ", split);
-//     }
-// }
-// }

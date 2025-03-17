@@ -15,6 +15,7 @@ using StardewValley;
 using MirrorMode.Helpers;
 using MirrorMode.Patches;
 using StardewModdingAPI.Enums;
+using StardewModdingAPI.Framework;
 using StardewModdingAPI.Framework.Rendering;
 using StardewValley.Buildings;
 using StardewValley.Extensions;
@@ -87,8 +88,8 @@ namespace MirrorMode
 
             if (e.Button is SButton.F5)
             {
-                Log.Alert("Unpatching...");
-                Harmony.UnpatchAll(ModManifest.UniqueID);
+                var mon = ModMonitor as Monitor;
+                mon?.LogOnceCache.Clear();
             }
 
             if (e.Button is SButton.F6)

@@ -116,6 +116,17 @@ public class EventPatches
     }
 
     [HarmonyPrefix]
+    [HarmonyPatch(nameof(Event.endBehaviors), [typeof(string[]), typeof(GameLocation)])]
+    static void endBehaviors_Prefix(Event __instance, string[] args, GameLocation location)
+    {
+        if (!string.Join(' ', args).EqualsIgnoreCase(__instance.eventCommands[^1]) || !string.Join(' ', args).Contains("end position", StringComparison.OrdinalIgnoreCase)) return;
+        if (args.Length >= 3)
+        {
+            args[2] = (location.Map.TileWidth() - int.Parse(args[2]) - 1).ToString();
+        }
+    }
+
+    [HarmonyPrefix]
     [HarmonyPatch(typeof(Event.DefaultCommands), nameof(Event.DefaultCommands.MoveToSoup))]
     static bool MoveToSoup_Prefix(Event @event)
     {

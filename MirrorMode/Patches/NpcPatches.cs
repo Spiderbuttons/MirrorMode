@@ -10,7 +10,7 @@ namespace MirrorMode.Patches;
 
 [HarmonyPatch]
 [HarmonyPatch(typeof(NPC))]
-public class NpcPatches
+public static class NpcPatches
 {
     [HarmonyPrefix]
     [HarmonyPatch(nameof(NPC.parseMasterSchedule))]

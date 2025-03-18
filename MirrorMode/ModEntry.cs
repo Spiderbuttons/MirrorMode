@@ -94,8 +94,7 @@ namespace MirrorMode
 
             if (e.Button is SButton.F6)
             {
-                string[] args = new string[0];
-                Log.Alert(args.GetType());
+                //
             }
         }
 

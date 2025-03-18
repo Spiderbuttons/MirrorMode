@@ -9,7 +9,7 @@ namespace MirrorMode.Patches;
 
 [HarmonyPatch]
 [HarmonyPatch(typeof(Game1))]
-public class Game1Patches
+public static class Game1Patches
 {
     [HarmonyPrefix]
     [HarmonyPatch(nameof(Game1.warpCharacter), [typeof(NPC), typeof(GameLocation), typeof(Vector2)])]

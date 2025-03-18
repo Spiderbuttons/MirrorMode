@@ -8,6 +8,7 @@ using HarmonyLib;
 using Microsoft.Xna.Framework;
 using MirrorMode.Helpers;
 using StardewModdingAPI;
+using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Extensions;
 using StardewValley.Locations;
@@ -16,7 +17,7 @@ using Rectangle = xTile.Dimensions.Rectangle;
 namespace MirrorMode.Patches;
 
 [HarmonyPatch(typeof(Event))]
-public class EventPatches
+public static class EventPatches
 {
     /* EVENT COMMANDS
 
@@ -87,7 +88,7 @@ public class EventPatches
     [HarmonyPatch(nameof(Event.InitializeEvent))]
     static void InitializeEvent_Prefix(GameLocation location)
     {
-        Log.Debug("Mirroring second event command: " + Game1.CurrentEvent.eventCommands[1]);
+        // Log.Debug("Mirroring second event command: " + Game1.CurrentEvent.eventCommands[1]);
         string[] args = ArgUtility.SplitQuoteAware(Game1.CurrentEvent.eventCommands[1], ' ', keepQuotesAndEscapes: true);
         if (ArgUtility.TryGetPoint(args, 0, out var viewport, out _))
         {
@@ -95,7 +96,7 @@ public class EventPatches
         }
         Game1.CurrentEvent.eventCommands[1] = string.Join(" ", args);
         
-        Log.Debug("Mirroring third event command: " + Game1.CurrentEvent.eventCommands[2]);
+        // Log.Debug("Mirroring third event command: " + Game1.CurrentEvent.eventCommands[2]);
         args = ArgUtility.SplitQuoteAware(Game1.CurrentEvent.eventCommands[2], ' ', keepQuotesAndEscapes: true);
         for (int i = 0; i < args.Length; i += 4)
         {
@@ -122,7 +123,7 @@ public class EventPatches
         if (!string.Join(' ', args).EqualsIgnoreCase(__instance.eventCommands[^1]) || !string.Join(' ', args).Contains("end position", StringComparison.OrdinalIgnoreCase)) return;
         if (args.Length >= 3)
         {
-            args[2] = (location.Map.TileWidth() - int.Parse(args[2]) - 1).ToString();
+            args[2] = (__instance.exitLocation.Location.Map.TileWidth() - int.Parse(args[2]) - 1).ToString();
         }
     }
 
@@ -161,18 +162,18 @@ public class EventPatches
         {
             foreach (var npc in @event.actors)
             {
-                if (npc.FacingDirection != 0 && npc.FacingDirection != 2) Log.Debug($"{npc.Name} facing {npc.FacingDirection} before");
+                // if (npc.FacingDirection != 0 && npc.FacingDirection != 2) Log.Debug($"{npc.Name} facing {npc.FacingDirection} before");
                 npc.faceDirection(npc.FacingDirection switch
                 {
                     1 => 3,
                     3 => 1,
                     _ => npc.FacingDirection
                 });
-                if (npc.FacingDirection != 0 && npc.FacingDirection != 2) Log.Debug($"{npc.Name} facing {npc.FacingDirection} after");
+                // if (npc.FacingDirection != 0 && npc.FacingDirection != 2) Log.Debug($"{npc.Name} facing {npc.FacingDirection} after");
             }
         }
 
-        Log.Alert("Loaded actors");
+        // Log.Alert("Loaded actors");
     }
 
     [HarmonyPrefix]
@@ -182,22 +183,22 @@ public class EventPatches
         _currentMapForParsing = location;
         bool flippedActorThisFrame = false;
 
-        ModEntry.ModMonitor.LogOnce($"Attempting to mirror command '{string.Join(" ", args)}'", LogLevel.Debug);
-        ModEntry.ModMonitor.LogOnce($"Before: {string.Join(" ", args)}", LogLevel.Warn);
+        // ModEntry.ModMonitor.LogOnce($"Attempting to mirror command '{string.Join(" ", args)}'", LogLevel.Debug);
+        // ModEntry.ModMonitor.LogOnce($"Before: {string.Join(" ", args)}", LogLevel.Warn);
         var split = args;
         switch (split[0].ToLower())
         {
             case "changelocation":
-                Log.Warn("Changing location to " + split[1]);
+                // Log.Warn("Changing location to " + split[1]);
                 var newMap = Game1.getLocationFromName(split[1]);
                 if (Game1.CurrentEvent.actors is not null)
                 {
                     foreach (var npc in Game1.CurrentEvent.actors)
                     {
-                        Log.Info($"Correcting {npc.Name} tile position from {npc.Tile}");
+                        // Log.Info($"Correcting {npc.Name} tile position from {npc.Tile}");
                         npc.setTilePosition(npc.Tile.Mirror(CurrentMapForParsing.Map.TileWidth()).ToPoint());
                         npc.setTilePosition(npc.Tile.Mirror(newMap.Map.TileWidth()).ToPoint());
-                        Log.Info($"Corrected {npc.Name} tile position to {npc.Tile}");
+                        // Log.Info($"Corrected {npc.Name} tile position to {npc.Tile}");
                         var cont = Game1.CurrentEvent.npcControllers.FindIndex(cont =>
                             cont.puppet.Name.EqualsIgnoreCase(npc.Name));
                         if (cont is not -1)
@@ -262,16 +263,16 @@ public class EventPatches
                 _currentMapForParsing = newMap;
                 break;
             case "changetotemporarymap":
-                Log.Warn("Changing map to " + split[1]);
+                // Log.Warn("Changing map to " + split[1]);
                 var tempMap = ((split[1] == "Town") ? new Town("Maps\\Town", "Temp") : ((Game1.CurrentEvent.isFestival && split[1].Contains("Town")) ? new Town("Maps\\" + split[1], "Temp") : new GameLocation("Maps\\" + split[1], "Temp")));
                 if (Game1.CurrentEvent.actors is not null)
                 {
                     foreach (var npc in Game1.CurrentEvent.actors)
                     {
-                        Log.Info($"Correcting {npc.Name} tile position from {npc.Tile}");
+                        // Log.Info($"Correcting {npc.Name} tile position from {npc.Tile}");
                         npc.setTilePosition(npc.Tile.Mirror(CurrentMapForParsing.Map.TileWidth()).ToPoint());
                         npc.setTilePosition(npc.Tile.Mirror(tempMap.Map.TileWidth()).ToPoint());
-                        Log.Info($"Corrected {npc.Name} tile position to {npc.Tile}");
+                        // Log.Info($"Corrected {npc.Name} tile position to {npc.Tile}");
                         var cont = Game1.CurrentEvent.npcControllers.FindIndex(cont =>
                             cont.puppet.Name.EqualsIgnoreCase(npc.Name));
                         if (cont is not -1)
@@ -490,8 +491,8 @@ public class EventPatches
 
                 break;
             case "temporaryanimatedsprite":
-                split[9] = (CurrentMapForParsing.Map.TileWidth() - int.Parse(split[9]) - 1).ToString();
-                split[12] = (!bool.Parse(split[12])).ToString();
+                // split[9] = (CurrentMapForParsing.Map.TileWidth() - int.Parse(split[9]) - 1).ToString();
+                // split[12] = (!bool.Parse(split[12])).ToString();
                 break;
             case "advancedmove":
                 for (int i = 3; i < split.Length; i += 2)
@@ -561,6 +562,6 @@ public class EventPatches
 
                 break;
         }
-        ModEntry.ModMonitor.LogOnce($"After: {string.Join(" ", split)}", LogLevel.Warn);
+        // ModEntry.ModMonitor.LogOnce($"After: {string.Join(" ", split)}", LogLevel.Warn);
     }
 }

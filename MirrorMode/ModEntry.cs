@@ -94,7 +94,7 @@ namespace MirrorMode
 
             if (e.Button is SButton.F6)
             {
-                //
+                Game1.CurrentEvent.exitEvent();
             }
         }
 
@@ -231,14 +231,35 @@ namespace MirrorMode
             return new Vector2(mapWidth - vector.X - 1, vector.Y);
         }
 
+        public static Vector2 Mirror(this Vector2 vector, string location)
+        {
+            return new Vector2(Game1.getLocationFromName(location).Map.TileWidth() - vector.X - 1, vector.Y);
+        }
+
         public static Point Mirror(this Point point, int mapWidth)
         {
             return new Point(mapWidth - point.X - 1, point.Y);
+        }
+        
+        public static Point Mirror(this Point point, string location)
+        {
+            return new Point(Game1.getLocationFromName(location).Map.TileWidth() - point.X - 1, point.Y);
         }
 
         public static Microsoft.Xna.Framework.Rectangle Mirror(this Microsoft.Xna.Framework.Rectangle rect, int mapWidth)
         {
             return new Microsoft.Xna.Framework.Rectangle(mapWidth - rect.X - (rect.Width - 1), rect.Y, rect.Width, rect.Height);
+        }
+        
+        public static Microsoft.Xna.Framework.Rectangle Mirror(this Microsoft.Xna.Framework.Rectangle rect, string location)
+        {
+            return new Microsoft.Xna.Framework.Rectangle(Game1.getLocationFromName(location).Map.TileWidth() - rect.X - (rect.Width - 1), rect.Y, rect.Width, rect.Height);
+        }
+
+        public static Warp Mirror(this Warp warp)
+        {
+            var warpVector = new Vector2(warp.TargetX, warp.TargetY).Mirror(warp.TargetName);
+            return new Warp(warp.X, warp.Y, warp.TargetName, (int)warpVector.X, (int)warpVector.Y, flipFarmer: warp.flipFarmer.Value);
         }
     }
 }

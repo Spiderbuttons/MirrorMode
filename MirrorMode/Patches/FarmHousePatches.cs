@@ -72,4 +72,23 @@ public static class FarmHousePatches
             return code;
         }
     }
+
+    [HarmonyPrefix]
+    [HarmonyPatch(nameof(FarmHouse.GetSpouseRoomCorner))]
+    static bool GetSpouseRoomCorner_Prefix(FarmHouse __instance, ref Point __result)
+    {
+        if (__instance.TryGetMapPropertyAs("SpouseRoomPosition", out Point position, required: false))
+        {
+            return true;
+        }
+
+        if (__instance.upgradeLevel != 1)
+        {
+            __result = new Point(50, 20).Mirror(__instance.Map.TileWidth());
+        }
+        else __result = new Point(29, 1).Mirror(__instance.Map.TileWidth());
+        
+        __result -= new Point(5, 0);
+        return false;
+    }
 }

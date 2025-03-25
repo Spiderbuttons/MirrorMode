@@ -29,6 +29,7 @@ using xTile.Format;
 using xTile.Layers;
 using xTile.ObjectModel;
 using xTile.Tiles;
+using Vector2 = Microsoft.Xna.Framework.Vector2;
 
 namespace MirrorMode
 {
@@ -56,6 +57,8 @@ namespace MirrorMode
         internal static HashSet<string> MapsToRetry = new();
         internal static bool CharactersReady = true;
 
+        public static TasCatcher TasCatcher { get; set; } = null!;
+
         public override void Entry(IModHelper helper)
         {
             ModHelper = helper;
@@ -72,29 +75,81 @@ namespace MirrorMode
             Helper.Events.Specialized.LoadStageChanged += this.OnLoadStageChanged;
             Helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
             {
-                Helper.GameContent.InvalidateCache(asset => true);
+                // Helper.GameContent.InvalidateCache(asset => true);
             };
+            
+            TasCatcher = Helper.Data.ReadJsonFile<TasCatcher>("tasCache.json") ?? new TasCatcher();
         }
 
         private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
         {
             if (e.Button is SButton.F2)
             {
-                foreach (var prop in Game1.currentLocation.Map.Properties)
+                var tile = Utility.PointToVector2(Game1.getMousePosition()) +
+                           new Vector2(Game1.viewport.X, Game1.viewport.Y);
+                var sprite = Game1.currentLocation.TemporarySprites.FirstOrDefault(s =>
                 {
-                    Log.Warn(prop.Key + ": " + prop.Value);
+                    if (new Microsoft.Xna.Framework.Rectangle((int)s.initialPosition.X, (int)s.initialPosition.Y, s.sourceRect.Width * 4,
+                            s.sourceRect.Height * 4).Contains(tile))
+                    {
+                        return true;
+                    }
+                    return false;
+                });
+                if (sprite is not null)
+                {
+                    Game1.playSound("breakingGlass");
+                    Log.Warn(sprite.text);
+                    sprite.HighlightForDebug();
+                    sprite.Position = (sprite.Position / 64).Mirror(Game1.currentLocation.Map.TileWidth()) * 64;
+                    sprite.initialPosition = (sprite.initialPosition / 64).Mirror(Game1.currentLocation.Map.TileWidth()) * 64;
+                    TasCatcher.WhitelistTas(sprite.text);
                 }
             }
 
             if (e.Button is SButton.F5)
             {
-                var mon = ModMonitor as Monitor;
-                mon?.LogOnceCache.Clear();
+                // var mon = ModMonitor as Monitor;
+                // mon?.LogOnceCache.Clear();
+                // var haley = Game1.RequireCharacter("Haley");
+                // haley.Speed = 10;
+
+                Helper.GameContent.InvalidateCache(ass => ass.NameWithoutLocale.BaseName.Contains("Maps"));
+
+                // Log.Warn(haley.controller.pathToEndPoint);
+                // foreach (var time in haley.Schedule)
+                // {
+                //     Log.Alert(time.Key + ": " + time.Value.targetTile);
+                // }
+                //
+                // Log.Alert("-----------------------------");
+                // foreach (var point in haley.controller.pathToEndPoint)
+                // {
+                //     Log.Warn(point);
+                // }
             }
 
             if (e.Button is SButton.F6)
             {
-                Game1.CurrentEvent.exitEvent();
+                var tile = Utility.PointToVector2(Game1.getMousePosition()) +
+                           new Vector2(Game1.viewport.X, Game1.viewport.Y);
+                var sprite = Game1.currentLocation.TemporarySprites.FirstOrDefault(s =>
+                {
+                    if (new Microsoft.Xna.Framework.Rectangle((int)s.initialPosition.X, (int)s.initialPosition.Y, s.sourceRect.Width * 4,
+                            s.sourceRect.Height * 4).Contains(tile))
+                    {
+                        return true;
+                    }
+                    return false;
+                });
+                if (sprite is not null)
+                {
+                    Game1.playSound("dropItemInWater");
+                    Log.Warn(sprite.text);
+                    sprite.HighlightForDebug();
+                    sprite.Position = (sprite.Position / 64).Mirror(Game1.currentLocation.Map.TileWidth()) * 64;
+                    sprite.initialPosition = (sprite.initialPosition / 64).Mirror(Game1.currentLocation.Map.TileWidth()) * 64;
+                }
             }
         }
 
@@ -134,6 +189,11 @@ namespace MirrorMode
                                 }
                                 else CharactersReady = false;
                             }
+                        }
+                        
+                        if (chara.SpouseRoom is not null && chara.SpouseRoom.MapAsset is null)
+                        {
+                            chara.SpouseRoom.MapSourceRect = chara.SpouseRoom.MapSourceRect.Mirror(29);
                         }
                     }
                 });

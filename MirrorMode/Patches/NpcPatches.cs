@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
@@ -58,16 +59,14 @@ public static class NpcPatches
     }
     
     [HarmonyPostfix]
-    [HarmonyPatch(nameof(NPC.parseMasterSchedule))]
-    static void parseMasterSchedule_Postfix(NPC __instance)
+    [HarmonyPatch(typeof(Character), nameof(Character.Halt))]
+    static void Halt_Postfix(Character __instance)
     {
-        // __instance.DefaultPosition = (__instance.DefaultPosition / 64).Mirror(Game1.getLocationFromName(__instance.DefaultMap).Map.TileWidth()) * 64;
-    }
-    
-    [HarmonyPostfix]
-    [HarmonyPatch(nameof(NPC.DefaultPosition), MethodType.Getter)]
-    static void DefaultPosition_Postfix(NPC __instance, ref Vector2 __result)
-    {
-        // __result = (__result / 64).Mirror(Game1.getLocationFromName(__instance.DefaultMap).Map.TileWidth()) * 64;
+        // if (__instance.Name is "Haley")
+        // {
+        //     Log.Warn("Haley halted.");
+        //     if (!Utils.TryGetCallingMethod(new StackFrame(2), out var type, out var method)) return;
+        //     Log.Warn("Calling function: " + type + "." + method);
+        // }
     }
 }

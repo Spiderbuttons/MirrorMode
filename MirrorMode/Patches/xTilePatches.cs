@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using HarmonyLib;
 using Microsoft.Xna.Framework.Graphics;
 using MirrorMode.Helpers;
@@ -82,7 +83,7 @@ public static class xTilePatches
         Action: OpenShop <id> [direction] [open] [close] [<x> <y> <w> <h>]
     */
 
-    public static Layer MirrorHorizontal(this Layer layer, IAssetName name)
+    public static Layer MirrorHorizontal(this Layer layer, IAssetName? name)
     {
         TileArray tiles = layer.Tiles;
         for (int y = 0; y < layer.LayerHeight; y++)
@@ -106,7 +107,7 @@ public static class xTilePatches
         return layer;
     }
 
-    public static void MirrorTileData(this Tile tile, IAssetName name)
+    public static void MirrorTileData(this Tile tile, IAssetName? name)
     {
         foreach (var prop in tile.Properties)
         {
@@ -192,6 +193,7 @@ public static class xTilePatches
             catch (Exception ex)
             {
                 Log.Error($"Error when mirroring tile property '{prop.Key}' with value '{prop.Value}' in asset '{name}': {ex.Message}");
+                if (name is null) return;
                 ModEntry.MapsToRetry.Add(PathUtilities.NormalizeAssetName(name.BaseName));
             }
         }
@@ -348,9 +350,24 @@ public static class xTilePatches
 
     [HarmonyPostfix]
     [HarmonyPatch(typeof(SDisplayDevice), nameof(SDisplayDevice.GetSpriteEffects))]
-    static void GetSpriteEffects_Prefix(ref SpriteEffects __result)
+    static void GetSpriteEffects_Postfix(Tile tile, ref SpriteEffects __result)
     {
         if (__result == SpriteEffects.None) __result = SpriteEffects.FlipHorizontally;
         else if (__result == SpriteEffects.FlipHorizontally) __result = SpriteEffects.None;
+        if (Context.IsWorldReady && Game1.currentLocation.Name.Contains("Volcano"))
+        {
+            __result = __result == SpriteEffects.FlipHorizontally ? SpriteEffects.None : SpriteEffects.FlipHorizontally;
+        }
+    }
+    
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(SDisplayDevice), nameof(SDisplayDevice.GetRotation))]
+    static void GetRotation_Postfix(Tile tile, ref float __result)
+    {
+        if (!tile.Properties.TryGetValue("@Rotation", out var propertyValue) || !int.TryParse(propertyValue, out var value))
+        {
+            return;
+        }
+        __result += (float)(Math.PI / (180.0 / 360));
     }
 }

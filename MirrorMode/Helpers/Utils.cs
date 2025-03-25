@@ -40,37 +40,35 @@ public static class Utils
             method = split[1];
         }
 
-        Log.Warn(type);
-
         if (type is null)
         {
             type = method[..method.IndexOf('.')];
         }
 
-        Type[] paras = caller.GetParameters().Select(p => p.ParameterType).ToArray();
-        var aType = AccessTools.TypeByName(type);
-        if (aType.GetMethod(method, paras) is null && paras.Length > 0) paras = paras[1..];
-        Log.Alert($"Type: {aType?.FullName} | Method: {method} | Paras: {paras.Join(null, ", ")}");
-        var name = method;
-        var meth = AccessTools.Method(aType, name, paras);
-        var body = meth.GetMethodBody();
-        if (body is not null)
-        {
-            var inst = meth.GetInstructions();
-            for (int i = 0; i < inst.Count; i++)
-            {
-                var ins = inst[i];
-                if (ins.OpCode == OpCodes.Newobj && ins.Operand is ConstructorInfo ctor && ctor.DeclaringType == typeof(Vector2))
-                {
-                    // check if the previous two instructions were Ldc.R4
-                    if (i < 2) continue;
-                    if (inst[i - 1].OpCode == OpCodes.Ldc_R4 && inst[i - 2].OpCode == OpCodes.Ldc_R4)
-                    {
-                        Log.Alert($"Found Vector2: {ins.Previous?.Operand} | {ins.Previous?.Previous?.Operand}");
-                    }
-                }
-            }
-        }
+        // Type[] paras = caller.GetParameters().Select(p => p.ParameterType).ToArray();
+        // var aType = AccessTools.TypeByName(type);
+        // if (aType.GetMethod(method, paras) is null && paras.Length > 0) paras = paras[1..];
+        // Log.Alert($"Type: {aType?.FullName} | Method: {method} | Paras: {paras.Join(null, ", ")}");
+        // var name = method;
+        // var meth = AccessTools.Method(aType, name, paras);
+        // var body = meth.GetMethodBody();
+        // if (body is not null)
+        // {
+        //     var inst = meth.GetInstructions();
+        //     for (int i = 0; i < inst.Count; i++)
+        //     {
+        //         var ins = inst[i];
+        //         if (ins.OpCode == OpCodes.Newobj && ins.Operand is ConstructorInfo ctor && ctor.DeclaringType == typeof(Vector2))
+        //         {
+        //             // check if the previous two instructions were Ldc.R4
+        //             if (i < 2) continue;
+        //             if (inst[i - 1].OpCode == OpCodes.Ldc_R4 && inst[i - 2].OpCode == OpCodes.Ldc_R4)
+        //             {
+        //                 Log.Alert($"Found Vector2: {ins.Previous?.Operand} | {ins.Previous?.Previous?.Operand}");
+        //             }
+        //         }
+        //     }
+        // }
 
         return true;
     }

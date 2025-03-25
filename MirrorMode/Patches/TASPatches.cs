@@ -16,7 +16,7 @@ using StardewValley.TokenizableStrings;
 
 namespace MirrorMode.Patches;
 
-[HarmonyPatch(typeof(TemporaryAnimatedSpriteList))]
+[HarmonyPatch]
 public static class TASPatches
 {
     static HashSet<string> invalidFunctions
@@ -46,38 +46,28 @@ public static class TASPatches
     }
     
     [HarmonyPostfix]
-    [HarmonyPatch(nameof(TemporaryAnimatedSpriteList.AddRange))]
+    [HarmonyPatch(typeof(TemporaryAnimatedSpriteList), nameof(TemporaryAnimatedSpriteList.AddRange))]
     static void AddRange_Postfix(IEnumerable<TemporaryAnimatedSprite> values)
     {
-        var string2 = TokenParser.ParseText("Hello, World!");
-        if (string2 != null) return;
-        return;
         if (!Context.IsWorldReady) return;
-        if (!Utils.TryGetCallingMethod(new StackFrame(1), out var type, out var method)) return;
-        if ($"{type}.{method}".EqualsIgnoreCase("Multiplayer.broadcastSprites") &&
-            !Utils.TryGetCallingMethod(new StackFrame(2), out type, out method)) return;
+        if (!Utils.TryGetCallingMethod(new StackFrame(2), out var type, out var method)) return;
         var fullName = $"{type}.{method}";
         
         foreach (var item in values)
         {
-            if (item.local) continue;
+            var identifier =
+                $"_Spiderbuttons.MirrorMode(\"{fullName}\" \"{Game1.currentLocation.Name}\" \"{item.textureName}\" \"{item.sourceRect}\" \"{item.initialParentTileIndex}\")";
             
-            if (item.sourceRect.X == 666 && Game1.currentLocation.Name.EqualsIgnoreCase("Sewer"))
+            if (item.text is null)
             {
-                item.Position -= new Vector2(32, 0);
-                goto mirror;
-            }
-
-            if (fullName.EqualsIgnoreCase("GameLocation.CheckGarbage"))
-            {
-                item.flipped = !item.flipped;
-                continue;
-            }
+                item.text = identifier;
+            } else item.text += identifier;
             
-            if (invalidFunctions.Any(inv => inv.Contains($"{fullName}"))) continue;
-            
-            mirror:
+            if (ModEntry.TasCatcher.Whitelist.TryGetValue(identifier, out var value) && !value) return;
+        
             ModEntry.ModMonitor.LogOnce("TAS Added via '" + fullName + "'", LogLevel.Error);
+            if (!ModEntry.TasCatcher.Whitelist.ContainsKey(item.text)) item.HighlightForDebug();
+            item.drawAboveAlwaysFront = true;
             if (Game1.currentLocation.TemporarySprites.Contains(item))
             {
                 item.Position = (item.Position / 64).Mirror(item.parent is null
@@ -90,30 +80,37 @@ public static class TASPatches
                 item.rotation = -item.rotation;
                 item.rotationChange = -item.rotationChange;
                 item.motion.X = -item.motion.X;
-                
+            
                 if (fullName.EqualsIgnoreCase("GameLocation.setFireplace"))
                 {
                     item.Position += new Vector2(16, 0);
                 }
             }
+
+            ModEntry.TasCatcher.Whitelist.TryAdd(identifier, false);
         }
     }
     
     [HarmonyPostfix]
-    [HarmonyPatch(nameof(TemporaryAnimatedSpriteList.Add))]
+    [HarmonyPatch(typeof(TemporaryAnimatedSpriteList), nameof(TemporaryAnimatedSpriteList.Add))]
     static void Add_Postfix(TemporaryAnimatedSprite item)
     {
-        return;
-        if (!Context.IsWorldReady || item.local) return;
+        if (!Context.IsWorldReady || item.positionFollowsAttachedCharacter) return;
         if (!Utils.TryGetCallingMethod(new StackFrame(1), out var type, out var method)) return;
         var fullName = $"{type}.{method}";
 
-        if (item.textureName.EqualsIgnoreCase("Characters\\\\asldkfjsquaskutanfsldk")) goto mirror;
+        var identifier =
+            $"_Spiderbuttons.MirrorMode(\"{fullName}\" \"{Game1.currentLocation.Name}\" \"{item.textureName}\" \"{item.sourceRect}\" \"{item.initialParentTileIndex}\")";
+        if (item.text is null)
+        {
+            item.text = identifier;
+        } else item.text += identifier;
         
-        if (invalidFunctions.Any(inv => inv.Contains($"{fullName}"))) return;
+        if (ModEntry.TasCatcher.Whitelist.TryGetValue(identifier, out var value) && !value) return;
         
-        mirror:
         ModEntry.ModMonitor.LogOnce("TAS Added via '" + fullName + "'", LogLevel.Error);
+        if (!ModEntry.TasCatcher.Whitelist.ContainsKey(item.text)) item.HighlightForDebug();
+        item.drawAboveAlwaysFront = true;
         if (Game1.currentLocation.TemporarySprites.Contains(item))
         {
             item.Position = (item.Position / 64).Mirror(item.parent is null
@@ -132,5 +129,58 @@ public static class TASPatches
                 item.Position += new Vector2(16, 0);
             }
         }
+
+        ModEntry.TasCatcher.Whitelist.TryAdd(identifier, false);
+    }
+
+    [HarmonyTranspiler]
+    [HarmonyPatch(typeof(TemporaryAnimatedSprite), nameof(TemporaryAnimatedSprite.draw))]
+    static IEnumerable<CodeInstruction> draw_Transpiler(IEnumerable<CodeInstruction> instructions,
+        ILGenerator il)
+    {
+        var code = instructions.ToList();
+        try
+        {
+            var matcher = new CodeMatcher(code, il);
+
+            matcher.MatchEndForward(
+                new CodeMatch(OpCodes.Ldfld, AccessTools.Field(typeof(TemporaryAnimatedSprite), nameof(TemporaryAnimatedSprite.text)))
+            ).Repeat(codeMatcher =>
+                codeMatcher.Advance(1).Insert(
+                    // new CodeInstruction(OpCodes.Ldarg_0),
+                    new CodeInstruction(OpCodes.Call,
+                        AccessTools.Method(typeof(TASPatches), nameof(StripText)))
+                ));
+
+            return matcher.InstructionEnumeration();
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Failed to patch TemporaryAnimatedSprite.draw: {ex}");
+            return code;
+        }
+    }
+
+    public static string? StripText(string? text)
+    {
+        if (text is null) return null;
+        var index = text.IndexOf("_Spiderbuttons.MirrorMode", StringComparison.Ordinal);
+        if (index == -1) return text;
+        return text[..index].Length == 0 ? null : text[..index];
+    }
+
+    public static void HighlightForDebug(this TemporaryAnimatedSprite sprite)
+    {
+        sprite.color = new Color(255 - sprite.color.R, 255 - sprite.color.G, 255 - sprite.color.B);
+        // sprite.pulse = true;
+        // sprite.pulseTime = 50;
+        // Color[] pixels = new Color[sprite.Texture.Width * sprite.Texture.Height];
+        // List<Color> newPixels = new List<Color>();
+        // sprite.Texture.GetData(0, sprite.sourceRect, pixels, 0, sprite.sourceRect.Width * sprite.sourceRect.Height);
+        // foreach (var pixel in pixels)
+        // {
+        //     newPixels.Add(new Color(255 - pixel.R, 255 - pixel.G, 255 - pixel.B));
+        // }
+        // sprite.Texture.SetData(newPixels.ToArray());
     }
 }

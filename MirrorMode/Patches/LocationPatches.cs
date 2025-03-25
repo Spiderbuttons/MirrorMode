@@ -222,6 +222,30 @@ public class LocationPatches
     }
 
     [HarmonyPrefix]
+    [HarmonyPatch(nameof(GameLocation.performAction), [typeof(string[]), typeof(Farmer), typeof(Location)])]
+    static bool performAction_Prefix(GameLocation __instance, string[] action, Location tileLocation, ref bool __result)
+    {
+        if (action[0] is "WarpCommunityCenter")
+        {
+            if (Game1.MasterPlayer.mailReceived.Contains("ccDoorUnlock") ||
+                Game1.MasterPlayer.mailReceived.Contains("JojaMember"))
+            {
+                __instance.playSound("doorClose", new Vector2(tileLocation.X, tileLocation.Y));
+                Point commWarp = new Point(32, 23).Mirror("CommunityCenter");
+                Game1.warpFarmer("CommunityCenter", commWarp.X, commWarp.Y, flip: false);
+            }
+            else
+            {
+                Game1.drawObjectDialogue(Game1.content.LoadString("Strings\\StringsFromCSFiles:GameLocation.cs.8175"));
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    [HarmonyPrefix]
     [HarmonyPatch(nameof(GameLocation.getWarpPointTarget))]
     static bool getWarpPointTarget_Prefix(GameLocation __instance, ref Point __result, Point warpPointLocation,
         Character character = null)

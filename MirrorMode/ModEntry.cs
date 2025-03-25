@@ -114,7 +114,9 @@ namespace MirrorMode
                 // var haley = Game1.RequireCharacter("Haley");
                 // haley.Speed = 10;
 
-                Helper.GameContent.InvalidateCache(ass => ass.NameWithoutLocale.BaseName.Contains("Maps"));
+                // Helper.GameContent.InvalidateCache(ass => ass.NameWithoutLocale.BaseName.Contains("Maps"));
+
+                Game1.currentLocation.furniture.Clear();
 
                 // Log.Warn(haley.controller.pathToEndPoint);
                 // foreach (var time in haley.Schedule)
@@ -289,6 +291,12 @@ namespace MirrorMode
         public static Vector2 Mirror(this Vector2 vector, int mapWidth)
         {
             return new Vector2(mapWidth - vector.X - 1, vector.Y);
+        }
+
+        public static Vector2 MirrorPixels(this Vector2 vector, int mapWidth)
+        {
+            // This 28 hardcoding might come back to bite me later. Don't know why it's not perfect if I do 64.
+            return new Vector2(mapWidth - vector.X - 28, vector.Y);
         }
 
         public static Vector2 Mirror(this Vector2 vector, string location)

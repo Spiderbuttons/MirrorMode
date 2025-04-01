@@ -186,7 +186,7 @@ public static class xTilePatches
                         }
                         break;
                     default:
-                        ModEntry.ModMonitor.LogOnce($"Unable to mirror TileData: {prop.Key} {prop.Value}", LogLevel.Debug);
+                        ModEntry.ModMonitor.LogOnce($"Unable to mirror TileData: {prop.Key} {prop.Value}", LogLevel.Trace);
                         break;
                 }
             }
@@ -315,7 +315,7 @@ public static class xTilePatches
                         prop.Value.m_value = string.Join(" ", group6Props);
                         break;
                     default:
-                        ModEntry.ModMonitor.LogOnce($"Unable to mirror map property: {prop.Key} {prop.Value}", LogLevel.Debug);
+                        ModEntry.ModMonitor.LogOnce($"Unable to mirror map property: {prop.Key} {prop.Value}", LogLevel.Trace);
                         break;
                 }
             }

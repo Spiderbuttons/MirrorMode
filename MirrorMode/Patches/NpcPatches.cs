@@ -17,10 +17,6 @@ public static class NpcPatches
     [HarmonyPatch(nameof(NPC.parseMasterSchedule))]
     static void parseMasterSchedule_Prefix(NPC __instance, ref string rawData)
     {
-        if (__instance.Name is "Haley") Log.Warn("Haley:" + __instance.DefaultPosition);
-        // __instance.DefaultPosition = (__instance.DefaultPosition / 64).Mirror(Game1.getLocationFromName(__instance.DefaultMap).Map.TileWidth()) * 64;
-        if (__instance.Name is "Haley") Log.Warn("Haley:" + __instance.DefaultPosition);
-        
         var splits = ArgUtility.SplitQuoteAware(rawData, '/');
         Dictionary<string, int> mapWidthCache = new();
         string newData = "";
@@ -55,18 +51,13 @@ public static class NpcPatches
                 newData += "/";
         }
         rawData = newData;
-        if (rawData.Contains("HaleyHouse")) Log.Alert(rawData);
     }
     
     [HarmonyPostfix]
     [HarmonyPatch(typeof(Character), nameof(Character.Halt))]
     static void Halt_Postfix(Character __instance)
     {
-        // if (__instance.Name is "Haley")
-        // {
-        //     Log.Warn("Haley halted.");
-        //     if (!Utils.TryGetCallingMethod(new StackFrame(2), out var type, out var method)) return;
-        //     Log.Warn("Calling function: " + type + "." + method);
-        // }
+        // Rectangle quarryBounds = new Rectangle(106, 13, 22, 22);
+        // quarryBounds = quarryBounds.Mirror(Game1.currentLocation.Map.TileWidth());
     }
 }

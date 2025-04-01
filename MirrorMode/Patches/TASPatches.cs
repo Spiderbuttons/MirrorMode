@@ -19,32 +19,6 @@ namespace MirrorMode.Patches;
 [HarmonyPatch]
 public static class TASPatches
 {
-    static HashSet<string> invalidFunctions
-    {
-        get
-        {
-            // This is so fuckin dumb lmao.
-            return new HashSet<string>
-            {
-                "Buff.OnAdded()",
-                "Debris.updateChunks",
-                "Event.addSpecificTemporarySprite",
-                "Farmer.*",
-                "Game1.showSwordswipeAnimation",
-                "Game1.pressUseToolButton",
-                "Farm.resetLocalState",
-                "Farm.addGrandpaCandles", // Might need adjustments.
-                "Farm.doLightningStrike", // Double check this.
-                "GameLocation.performTouchAction", // EXCEPTIONS DONE
-                "GameLocation.UpdateWhenCurrentLocation",
-                "GameLocation.resetLocalState",
-                "GameLocation.playTerrainSound",
-                "GameLocation.CheckGarbage", // EXCEPTIONS DONE
-                "GameLocation.performAction", // Needs exceptions: 270
-            };
-        }
-    }
-    
     [HarmonyPostfix]
     [HarmonyPatch(typeof(TemporaryAnimatedSpriteList), nameof(TemporaryAnimatedSpriteList.AddRange))]
     static void AddRange_Postfix(IEnumerable<TemporaryAnimatedSprite> values)
@@ -56,18 +30,17 @@ public static class TASPatches
         foreach (var item in values)
         {
             var identifier =
-                $"_Spiderbuttons.MirrorMode(\"{fullName}\" \"{Game1.currentLocation.Name}\" \"{item.textureName}\" \"{item.sourceRect}\" \"{item.initialParentTileIndex}\")";
+                $"_Spiderbuttons.MirrorMode({fullName} {item.textureName} {item.sourceRect} {item.initialParentTileIndex})";
             
             if (item.text is null)
             {
                 item.text = identifier;
             } else item.text += identifier;
             
-            if (ModEntry.TasCatcher.Whitelist.TryGetValue(identifier, out var value) && !value) return;
+            if (ModEntry.TasCatcher.TASToSkip.Contains(identifier)) return;
         
-            ModEntry.ModMonitor.LogOnce("TAS Added via '" + fullName + "'", LogLevel.Error);
-            if (!ModEntry.TasCatcher.Whitelist.ContainsKey(item.text)) item.HighlightForDebug();
-            item.drawAboveAlwaysFront = true;
+            ModEntry.ModMonitor.LogOnce("TAS Added via '" + fullName + "'", LogLevel.Trace);
+            ModEntry.ModMonitor.LogOnce("Identifier: " + identifier, LogLevel.Trace);
             if (Game1.currentLocation.TemporarySprites.Contains(item))
             {
                 item.Position = (item.Position / 64).Mirror(item.parent is null
@@ -85,9 +58,12 @@ public static class TASPatches
                 {
                     item.Position += new Vector2(16, 0);
                 }
+                
+                if (fullName.EqualsIgnoreCase("GameLocation.performTouchAction") && Game1.currentLocation.Name.EqualsIgnoreCase("Sewer"))
+                {
+                    item.Position += new Vector2(32, 0);
+                }
             }
-
-            ModEntry.TasCatcher.Whitelist.TryAdd(identifier, false);
         }
     }
     
@@ -95,22 +71,32 @@ public static class TASPatches
     [HarmonyPatch(typeof(TemporaryAnimatedSpriteList), nameof(TemporaryAnimatedSpriteList.Add))]
     static void Add_Postfix(TemporaryAnimatedSprite item)
     {
-        if (!Context.IsWorldReady || item.positionFollowsAttachedCharacter) return;
+        if (item.positionFollowsAttachedCharacter) return;
         if (!Utils.TryGetCallingMethod(new StackFrame(1), out var type, out var method)) return;
         var fullName = $"{type}.{method}";
 
         var identifier =
-            $"_Spiderbuttons.MirrorMode(\"{fullName}\" \"{Game1.currentLocation.Name}\" \"{item.textureName}\" \"{item.sourceRect}\" \"{item.initialParentTileIndex}\")";
+            $"_Spiderbuttons.MirrorMode({fullName} {item.textureName} {item.sourceRect} {item.initialParentTileIndex})";
         if (item.text is null)
         {
             item.text = identifier;
         } else item.text += identifier;
         
-        if (ModEntry.TasCatcher.Whitelist.TryGetValue(identifier, out var value) && !value) return;
+        if (ModEntry.TasCatcher.TASToSkip.Contains(identifier)) return;
         
-        ModEntry.ModMonitor.LogOnce("TAS Added via '" + fullName + "'", LogLevel.Error);
-        if (!ModEntry.TasCatcher.Whitelist.ContainsKey(item.text)) item.HighlightForDebug();
+        ModEntry.ModMonitor.LogOnce("TAS Added via '" + fullName + "'", LogLevel.Trace);
+        ModEntry.ModMonitor.LogOnce("Identifier: " + identifier, LogLevel.Trace);
         item.drawAboveAlwaysFront = true;
+
+        if (!Context.IsWorldReady || Game1.activeClickableMenu is TitleMenu tm)
+        {
+            item.Position = item.Position.MirrorForUI(Game1.viewport.Width, item.sourceRect.Width * 2);
+            item.initialPosition = item.initialPosition.MirrorForUI(Game1.viewport.Width, item.sourceRect.Width * 2);
+            item.rotation = -item.rotation;
+            item.rotationChange = -item.rotationChange;
+            item.motion.X = -item.motion.X;
+            return;
+        }
         if (Game1.currentLocation.TemporarySprites.Contains(item))
         {
             item.Position = (item.Position / 64).Mirror(item.parent is null
@@ -128,9 +114,12 @@ public static class TASPatches
             {
                 item.Position += new Vector2(16, 0);
             }
-        }
 
-        ModEntry.TasCatcher.Whitelist.TryAdd(identifier, false);
+            if (fullName.EqualsIgnoreCase("IslandEast.AddTorchLights"))
+            {
+                item.Position += new Vector2(30, 0);
+            }
+        }
     }
 
     [HarmonyTranspiler]

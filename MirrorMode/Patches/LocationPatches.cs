@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using MirrorMode.Helpers;
+using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Buildings;
 using xTile;
@@ -17,17 +19,113 @@ namespace MirrorMode.Patches;
 [HarmonyPatch(typeof(GameLocation))]
 public class LocationPatches
 {
+    private static readonly HashSet<string> setMapTileBlacklist = new HashSet<string>
+    {
+        "CommunityCenter.doShowMissedRewardsChest",
+        "DecoratableLocation.UpdateFloor",
+        "DecoratableLocation.UpdateWallpaper",
+        "MineShaft.calicoStatueActivated",
+        "MineShaft.setElevatorLit",
+        "MineShaft.checkForMapAlterations",
+        "MineShaft.doCreateLadderAt",
+        "MineShaft.prepareElevator",
+    };
+
+    private static readonly HashSet<string> setTilePropertyBlacklist = new HashSet<string>
+    {
+        "InteriorDoor.openDoorTiles",
+        "BoatTunnel.UpdateGateTileProperty",
+        "FarmHouse.updateCellarWarps",
+        "FarmHouse.loadSpouseRoom",
+    };
+    
+    private static readonly HashSet<string> removeTileBlacklist = new HashSet<string>
+    {
+        "DelayedAction.ApplyRemoveMapTile",
+        "Event.setUpPlayerControlSequence",
+        "InteriorDoor.openDoorTiles",
+        "FarmHouse.MakeMapModifications",
+        "DefaultCommands.RemoveTile"
+    };
+    
+    private static readonly HashSet<string> removeTilePropertyBlacklist = new HashSet<string>
+    {
+        "InteriorDoor.openDoorTiles",
+        "InteriorDoor.closeDoorTiles"
+    };
+
+    [HarmonyPrefix]
+    [HarmonyPatch(nameof(GameLocation.setMapTile))]
+    static void setMapTile_Prefix(GameLocation __instance, ref int tileX)
+    {
+        if (__instance.Name.Contains("Volcano")) return;
+        if (!Utils.TryGetCallingMethod(new StackFrame(1), out var type, out var method)) return;
+        Utils.TryGetCallingMethod(new StackFrame(2), out var type2, out var method2);
+        if (!setMapTileBlacklist.Contains($"{type}.{method}") && !setMapTileBlacklist.Contains($"{type2}.{method2}")) tileX = __instance.Map.TileWidth() - tileX - 1;
+    }
+    
+    [HarmonyPrefix]
+    [HarmonyPatch(nameof(GameLocation.setTileProperty))]
+    static void setTileProperty_Prefix(GameLocation __instance, ref int tileX)
+    {
+        if (__instance.Name.Contains("Volcano")) return;
+        if (!Utils.TryGetCallingMethod(new StackFrame(1), out var type, out var method)) return;
+        Utils.TryGetCallingMethod(new StackFrame(2), out var type2, out var method2);
+        if (!setTilePropertyBlacklist.Contains($"{type}.{method}") && !setTilePropertyBlacklist.Contains(type2 is not null ? $"{type2}.{method2}" : "NULL")) tileX = __instance.Map.TileWidth() - tileX - 1;
+    }
+    
+    [HarmonyPrefix]
+    [HarmonyPatch(nameof(GameLocation.removeTile), [typeof(int), typeof(int), typeof(string)])]
+    static void removeTile_Prefix(GameLocation __instance, ref int x)
+    {
+        if (__instance.Name.Contains("Volcano")) return;
+        if (!Utils.TryGetCallingMethod(new StackFrame(1), out var type, out var method)) return;
+        Utils.TryGetCallingMethod(new StackFrame(2), out var type2, out var method2);
+        if (!removeTileBlacklist.Contains($"{type}.{method}") && !removeTileBlacklist.Contains(type2 is not null ? $"{type2}.{method2}" : "NULL")) x = __instance.Map.TileWidth() - x - 1;
+    }
+    
+    [HarmonyPrefix]
+    [HarmonyPatch(nameof(GameLocation.removeTile), [typeof(Location), typeof(string)])]
+    static void removeTile_Prefix(GameLocation __instance, ref Location tileLocation)
+    {
+        if (__instance.Name.Contains("Volcano")) return;
+        tileLocation.X = __instance.Map.TileWidth() - tileLocation.X - 1;
+    }
+    
+    [HarmonyPrefix]
+    [HarmonyPatch(nameof(GameLocation.removeTileProperty))]
+    static void removeTileProperty_Prefix(GameLocation __instance, ref int tileX)
+    {
+        if (__instance.Name.Contains("Volcano")) return;
+        if (!Utils.TryGetCallingMethod(new StackFrame(1), out var type, out var method)) return;
+        Utils.TryGetCallingMethod(new StackFrame(2), out var type2, out var method2);
+        if (!removeTilePropertyBlacklist.Contains($"{type}.{method}") && !removeTilePropertyBlacklist.Contains(type2 is not null ? $"{type2}.{method2}" : "NULL")) tileX = __instance.Map.TileWidth() - tileX - 1;
+    }
+    
+    [HarmonyPrefix]
+    [HarmonyPatch(nameof(GameLocation.setAnimatedMapTile))]
+    static void setAnimatedMapTile_Prefix(GameLocation __instance, ref int tileX)
+    {
+        if (__instance.Name.Contains("Volcano")) return;
+        tileX = __instance.Map.TileWidth() - tileX - 1;
+    }
+    
+    [HarmonyPrefix]
+    [HarmonyPatch(nameof(GameLocation.setObject))]
+    static void setObject_Prefix(GameLocation __instance, ref Vector2 v)
+    {
+        if (__instance.Name.Contains("Volcano")) return;
+        v = v.Mirror(__instance.Map.TileWidth());
+    }
+    
     [HarmonyPrefix]
     [HarmonyPatch(nameof(GameLocation.ApplyMapOverride),
         [typeof(Map), typeof(string), typeof(Rectangle?), typeof(Rectangle?), typeof(Action<Point>)])]
     static bool ApplyMapOverride_Prefix(GameLocation __instance, Map override_map, string override_key,
         Rectangle? source_rect, ref Rectangle? dest_rect, Action<Point> perTileCustomAction)
     {
-        if (override_key.Contains("CommunityCenter"))
-        {
-            // log all the rects
-            Log.Alert($"CommunityCenter: {override_key} {source_rect} {dest_rect}");
-        }
+        if (__instance.Name.Contains("Volcano")) return true;
+        if (__instance.Name.Contains("Volcano") && __instance.Name is not "VolcanoDungeon0" and not "VolcanoDungeon5") return true;
         
         if (override_key is "spouse_room") return true;
         
@@ -46,8 +144,6 @@ public class LocationPatches
         {
             source_rect = source_rect.Value.Mirror(override_map.TileWidth());
         }
-        
-        Log.Warn($"Mirrored {override_key}: {source_rect} {dest_rect}");
 
         if (__instance._appliedMapOverrides.Contains(override_key))
         {
@@ -150,13 +246,12 @@ public class LocationPatches
         int source_rect_y = source_rect.Value.Y;
         int dest_rect_x = dest_rect.Value.X;
         int dest_rect_y = dest_rect.Value.Y;
-        Log.Alert(dest_rect);
         for (int x = oriSource is null ? source_rect.Value.Width : 0; oriSource is null ? (x >= 0) : (x < source_rect.Value.Width); x += oriSource is null ? -1 : 1)
         {
             for (int y = 0; y < source_rect.Value.Height; y++)
             {
                 Point source_tile_pos = new Point(oriSource is null ? source_rect.Value.Width - x + 1 : source_rect_x - x - 1, source_rect_y + y);
-                Point dest_tile_pos = new Point(oriSource is null ? dest_rect_x - x + dest_rect.Value.Width + 1 : dest_rect_x - x - 1, dest_rect_y + y);
+                Point dest_tile_pos = new Point(oriSource is null ? dest_rect_x - x + dest_rect.Value.Width + (oriDest is null ? 1 : 0) : dest_rect_x - x - 1, dest_rect_y + y);
                 perTileCustomAction?.Invoke(dest_tile_pos);
                 bool lower_layer_overridden = false;
                 for (int layer_index = 0; layer_index < override_map.Layers.Count; layer_index++)

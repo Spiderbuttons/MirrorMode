@@ -1,9 +1,9 @@
 {
-    "Name": "MirrorMode",
+    "Name": "Mirror Mode",
     "Author": "Spiderbuttons",
     "Version": "1.0.0",
-    "Description": "A template for a Stardew Valley mod.",
+    "Description": "Joja™ Limited Edition Stardew Valley \"Right-to-Left\" Edition™",
     "UniqueID": "Spiderbuttons.MirrorMode",
     "EntryDll": "MirrorMode.dll",
-    "UpdateKeys": []
+    "UpdateKeys": [ "Nexus:32823" ]
 }

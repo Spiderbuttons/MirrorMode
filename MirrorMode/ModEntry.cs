@@ -4,7 +4,6 @@ using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Xml;
-using Force.DeepCloner;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -15,37 +14,16 @@ using StardewValley;
 using MirrorMode.Helpers;
 using MirrorMode.Patches;
 using StardewModdingAPI.Enums;
-using StardewModdingAPI.Framework;
-using StardewModdingAPI.Framework.Rendering;
-using StardewValley.Buildings;
-using StardewValley.Extensions;
 using StardewValley.GameData.Characters;
-using StardewValley.Locations;
+
 using StardewValley.Menus;
-using StardewValley.TerrainFeatures;
-using TMXTile;
+
 using xTile;
-using xTile.Dimensions;
-using xTile.Display;
-using xTile.Format;
-using xTile.Layers;
-using xTile.ObjectModel;
-using xTile.Tiles;
+
 using Vector2 = Microsoft.Xna.Framework.Vector2;
 
 namespace MirrorMode
 {
-    /* TODO: FUNCTIONS WITH HARDCODED COORDINATES
-
-        Farm.doDailyMountainFarmUpdate()
-
-        FarmHouse.getFireplacePoint()
-        FarmHouse.GetCribBounds()
-        FarmHouse.getEntryLocation()
-        FarmHouse.getForbiddenPetWarpTiles
-
-    */
-
     internal sealed class ModEntry : Mod
     {
         internal static IModHelper ModHelper { get; set; } = null!;
@@ -58,6 +36,8 @@ namespace MirrorMode
         internal static Dictionary<string, int> MapToWidthLookup { get; } = new();
         internal static HashSet<string> MapsToRetry = new();
         internal static bool CharactersReady = true;
+        
+        private Config Config { get; set; } = new();
 
         public static TasCatcher TasCatcher { get; set; } = null!;
 
@@ -69,132 +49,41 @@ namespace MirrorMode
 
             Harmony.PatchAll();
 
+            Helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
             Helper.Events.Input.ButtonPressed += this.OnButtonPressed;
             Helper.Events.Player.Warped += this.OnWarped;
             Helper.Events.Content.AssetRequested += this.OnAssetRequested;
             Helper.Events.Content.AssetsInvalidated += this.OnAssetsInvalidated;
             Helper.Events.Content.AssetReady += this.OnAssetReady;
             Helper.Events.Specialized.LoadStageChanged += this.OnLoadStageChanged;
-            // Helper.Events.GameLoop.SaveCreating += this.OnSaveCreating;
-            // Helper.Events.GameLoop.Saved += this.OnSaved;
-            // Helper.Events.GameLoop.Saving += this.OnSaving;
+
             
             TasCatcher = Helper.Data.ReadJsonFile<TasCatcher>("tasCache.json") ?? new TasCatcher();
         }
-        
-        // private void OnSaveCreating(object? sender, SaveCreatingEventArgs e)
-        // {
-        //     Game1.getFarm().modData["Spiderbuttons.MirrorMode"] = "save";
-        // }
-        //
-        // private void OnSaving(object? sender, SavingEventArgs e)
-        // {
-        //     if (!Game1.getFarm().modData.ContainsKey("Spiderbuttons.MirrorMode")) return;
-        //     MirrorEverything();
-        //     Game1.getFarm().modData.Remove("Spiderbuttons.MirrorMode");
-        // }
-        //
-        // private void OnSaved(object? sender, SavedEventArgs e)
-        // {
-        //     if (Game1.getFarm().modData.ContainsKey("Spiderbuttons.MirrorMode")) return;
-        //     MirrorEverything();
-        //     Game1.getFarm().modData["Spiderbuttons.MirrorMode"] = "true";
-        // }
-        //
-        // private void MirrorEverything()
-        // {
-        //     Utility.ForEachLocation(loc =>
-        //     {
-        //         foreach (var building in loc.buildings)
-        //         {
-        //             Vector2 mirroredLocation =
-        //                 new Vector2(building.tileX.Value, building.tileY.Value).Mirror(building.GetParentLocation().Map
-        //                     .TileWidth()) - new Vector2(building.tilesWide.Value - 1, 0);
-        //             building.modData["Spiderbuttons.MirrorMode"] = $"{mirroredLocation.X},{mirroredLocation.Y}";
-        //             building.isMoving = true;
-        //             building.GetParentLocation().buildStructure(building,
-        //                 new Vector2(building.tileX.Value - 1000, building.tileY.Value), Game1.player);
-        //         }
-        //
-        //         foreach (var building in loc.buildings)
-        //         {
-        //             if (!building.modData.ContainsKey("Spiderbuttons.MirrorMode")) continue;
-        //             string[] split = building.modData["Spiderbuttons.MirrorMode"].Split(',');
-        //             Vector2 target = new Vector2(float.Parse(split[0]), float.Parse(split[1]));
-        //             building.GetParentLocation().buildStructure(building, target, Game1.player);
-        //             building.modData.Remove("Spiderbuttons.MirrorMode");
-        //             building.isMoving = false;
-        //         }
-        //
-        //         foreach (var tf in loc.terrainFeatures.Values)
-        //         {
-        //             if (tf is HoeDirt { Pot: not null }) continue;
-        //             Vector2 mirroredLocation = new Vector2(tf.Tile.X, tf.Tile.Y).Mirror(loc.Map.TileWidth());
-        //             tf.modData["Spiderbuttons.MirrorMode"] = $"{mirroredLocation.X},{mirroredLocation.Y}";
-        //             tf.Tile = new Vector2(tf.Tile.X - 1000, tf.Tile.Y);
-        //         }
-        //
-        //         foreach (var tf in loc.terrainFeatures.Values)
-        //         {
-        //             if (tf is HoeDirt { Pot: not null }) continue;
-        //             if (!tf.modData.ContainsKey("Spiderbuttons.MirrorMode")) continue;
-        //             string[] split = tf.modData["Spiderbuttons.MirrorMode"].Split(',');
-        //             Vector2 target = new Vector2(float.Parse(split[0]), float.Parse(split[1]));
-        //             tf.Tile = target;
-        //             tf.modData.Remove("Spiderbuttons.MirrorMode");
-        //         }
-        //         
-        //         foreach (var tf in loc.largeTerrainFeatures)
-        //         {
-        //             Vector2 mirroredLocation = new Vector2(tf.Tile.X, tf.Tile.Y).Mirror(loc.Map.TileWidth()) -
-        //                                        new Vector2(1, 0);
-        //             tf.modData["Spiderbuttons.MirrorMode"] = $"{mirroredLocation.X},{mirroredLocation.Y}";
-        //             tf.Tile = new Vector2(tf.Tile.X - 1000, tf.Tile.Y);
-        //         }
-        //         
-        //         foreach (var tf in loc.largeTerrainFeatures)
-        //         {
-        //             if (!tf.modData.ContainsKey("Spiderbuttons.MirrorMode")) continue;
-        //             string[] split = tf.modData["Spiderbuttons.MirrorMode"].Split(',');
-        //             Vector2 target = new Vector2(float.Parse(split[0]), float.Parse(split[1]));
-        //             tf.Tile = target;
-        //             tf.modData.Remove("Spiderbuttons.MirrorMode");
-        //         }
-        //         
-        //         foreach (var obj in loc.Objects.Values)
-        //         {
-        //             Vector2 mirroredLocation = new Vector2(obj.TileLocation.X, obj.TileLocation.Y).Mirror(loc.Map.TileWidth());
-        //             obj.modData["Spiderbuttons.MirrorMode"] = $"{mirroredLocation.X},{mirroredLocation.Y}";
-        //             obj.TileLocation = new Vector2(obj.TileLocation.X - 1000, obj.TileLocation.Y);
-        //         }
-        //         
-        //         foreach (var obj in loc.Objects.Values)
-        //         {
-        //             if (!obj.modData.ContainsKey("Spiderbuttons.MirrorMode")) continue;
-        //             string[] split = obj.modData["Spiderbuttons.MirrorMode"].Split(',');
-        //             Vector2 target = new Vector2(float.Parse(split[0]), float.Parse(split[1]));
-        //             obj.TileLocation = target;
-        //             obj.modData.Remove("Spiderbuttons.MirrorMode");
-        //         }
-        //         
-        //         foreach (var furniture in loc.furniture)
-        //         {
-        //             furniture.SetPlacement(furniture.TileLocation.Mirror(loc.Map.TileWidth() - furniture.getTilesWide() + 1));
-        //         }
-        //
-        //         // foreach (var chara in loc.characters)
-        //         // {
-        //         //     if (!chara.IsVillager) continue;
-        //         //     chara.setTilePosition(chara.DefaultPosition.ToPoint());
-        //         // }
-        //
-        //         return true;
-        //     });
-        // }
+
+        private void OnGameLaunched(object? sender, GameLaunchedEventArgs e)
+        {
+            var configMenu = this.Helper.ModRegistry.GetApi<IGenericModConfigMenuApi>("spacechase0.GenericModConfigMenu");
+            if (configMenu is null) return;
+            
+            configMenu.Register(
+                mod: ModManifest,
+                reset: () => Config = new Config(),
+                save: () => Helper.WriteConfig(Config)
+            );
+            
+            configMenu.AddKeybind(
+                mod: ModManifest,
+                name: () => "TASer",
+                tooltip: () => "The button used to zap an incorrectly placed TAS back into position and add it to your TAS Cache.",
+                getValue: () => Config.TASer,
+                setValue: value => Config.TASer = value
+            );
+        }
 
         private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
         {
-            if (e.Button is SButton.F2)
+            if (e.Button == Config.TASer)
             {
                 var tile = Utility.PointToVector2(Game1.getMousePosition()) +
                            new Vector2(Game1.viewport.X, Game1.viewport.Y);
@@ -241,39 +130,6 @@ namespace MirrorMode
                     }
 
                     TasCatcher.Blacklist(sprite.text);
-                }
-            }
-
-            if (e.Button is SButton.F5)
-            {
-                // var mon = ModMonitor as Monitor;
-                // mon.LogOnceCache.Clear();
-                // Helper.GameContent.InvalidateCache(ass => true);
-
-                Game1.netWorldState.Value.canDriveYourselfToday.Value = true;
-            }
-
-            if (e.Button is SButton.F6)
-            {
-                var tile = Utility.PointToVector2(Game1.getMousePosition()) +
-                           new Vector2(Game1.viewport.X, Game1.viewport.Y);
-                var sprite = Game1.currentLocation.TemporarySprites.FirstOrDefault(s =>
-                {
-                    if (new Microsoft.Xna.Framework.Rectangle((int)s.initialPosition.X, (int)s.initialPosition.Y, s.sourceRect.Width * 4,
-                            s.sourceRect.Height * 4).Contains(tile))
-                    {
-                        return true;
-                    }
-                    return false;
-                });
-                if (sprite is not null)
-                {
-                    Game1.playSound("breakingGlass");
-                    Log.Warn(sprite.text);
-                    sprite.flicker = !sprite.flicker;
-                    sprite.Position = (sprite.Position / 64).Mirror(Game1.currentLocation.Map.TileWidth()) * 64;
-                    sprite.initialPosition = (sprite.initialPosition / 64).Mirror(Game1.currentLocation.Map.TileWidth()) * 64;
-                    // TasCatcher.Blacklist(sprite.text);
                 }
             }
         }
@@ -354,7 +210,7 @@ namespace MirrorMode
             {
                 if (MapsToRetry.Any())
                 {
-                    Log.Alert("Retrying " + MapsToRetry.Count + " maps");
+                    Log.Trace("Retrying " + MapsToRetry.Count + " maps");
                     foreach (var map in MapsToRetry)
                     {
                         MapToWidthLookup.Remove(map);
@@ -379,7 +235,7 @@ namespace MirrorMode
                 {
                     if (MapsToRetry.Contains(PathUtilities.NormalizeAssetName(asset.NameWithoutLocale.BaseName)))
                     {
-                        Log.Error("Retrying " + asset.NameWithoutLocale.BaseName);
+                        Log.Trace("Retrying " + asset.NameWithoutLocale.BaseName);
                         return true;
                     }
                 
